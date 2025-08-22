@@ -1,6 +1,36 @@
-// app.js（軽量 index.json 版：全文）
+// app.js（軽量 index.json 版 + クリエイターURL→公開URLの正規化 + 強化検索/ハイライト）
+// - 一覧は data/index.json を使用（高速）
+// - 詳細は details.html?slug=... で ep/<slug>.json を1件取得
+// - 外部リンク（再生ボタン）は normalizePublicUrl() で creators→podcasters 等に正規化してから使用
+
 let items = [];
 const $  = (s) => document.querySelector(s);
+
+/* ====== 外部リンクの公開URL正規化 ======
+   creators.spotify.com → podcasters.spotify.com/pod/show/<handle>/episodes/<slug>
+   anchor.fm → podcasters.spotify.com に寄せる
+================================================ */
+function normalizePublicUrl(u){
+  if(!u) return '';
+  try{
+    const url = new URL(u);
+    // creators → podcasters（公開ページ）
+    if (url.hostname === 'creators.spotify.com'){
+      const m = url.pathname.match(/^\/pod\/profile\/([^/]+)\/episodes\/([^/?#]+)/);
+      if (m){
+        const [, handle, slug] = m;
+        return `https://podcasters.spotify.com/pod/show/${handle}/episodes/${slug}`;
+      }
+    }
+    // 旧 anchor → podcasters へ寄せる
+    if (url.hostname === 'anchor.fm'){
+      return u.replace('https://anchor.fm/', 'https://podcasters.spotify.com/');
+    }
+    return u;
+  }catch{
+    return u;
+  }
+}
 
 async function load() {
   try {
@@ -17,31 +47,19 @@ async function load() {
   }
 }
 
-function normalizePublicUrl(u){
-  if(!u) return '';
-  try {
-    const url = new URL(u);
-    // creators → podcasters（公開ページ）
-    const m = url.hostname === 'creators.spotify.com'
-      ? url.pathname.match(/^\/pod\/profile\/([^/]+)\/episodes\/([^/?#]+)/)
-      : null;
-    if (m) {
-      const [, handle, slug] = m;
-      return `https://podcasters.spotify.com/pod/show/${handle}/episodes/${slug}`;
-    }
-    // 旧 anchor → podcasters へ寄せる
-    if (url.hostname === 'anchor.fm') {
-      return u.replace('https://anchor.fm/', 'https://podcasters.spotify.com/');
-    }
-    return u;
-  } catch { return u; }
-}
-
 function wireUI(){
   $('#toggle-filters')?.addEventListener('click', ()=>{
     const d = $('#filters'); if(!d) return; d.open = !d.open;
   });
   $('#reset')?.addEventListener('click', resetAll);
+
+  // 共有ボタン（任意：存在すれば使える）
+  $('#share')?.addEventListener('click', async ()=>{
+    try{
+      await navigator.clipboard.writeText(location.href);
+      alert('現在の検索条件のURLをコピーしました。');
+    }catch(e){ alert('コピーに失敗しました'); }
+  });
 }
 
 function initFilters(data) {
@@ -52,9 +70,19 @@ function initFilters(data) {
   fillSelect('#f-topic',     uniq(data.flatMap(d => d.topics    || [])));
   fillSelect('#f-tag',       uniq(data.flatMap(d => d.tags      || [])));
 
+  // 反応を軽く（デバウンス）
+  const onInputDebounced = (fn, ms=150) => {
+    let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); };
+  };
   ['#q','#f-infection','#f-journal','#f-design',
    '#f-pathogen','#f-topic','#f-tag','#sort'
-  ].forEach(id => $(id)?.addEventListener('input', render));
+  ].forEach(id => $(id)?.addEventListener('input', onInputDebounced(render, 150)));
+
+  // ショートカット：/ で検索にフォーカス、Esc で解除
+  window.addEventListener('keydown', (e)=>{
+    if(e.key==='/' && document.activeElement.tagName!=='INPUT'){ e.preventDefault(); $('#q')?.focus(); }
+    if(e.key==='Escape'){ document.activeElement.blur(); }
+  });
 }
 
 function fillSelect(sel, values) {
@@ -152,12 +180,26 @@ function render() {
   else if (s.sort === 'journal') list.sort((a, b) => (a.journal || '').localeCompare(b.journal || '', 'ja'));
   else                          list.sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0));
 
+  // URL同期（共有しやすく）
+  const qs = new URLSearchParams(s).toString();
+  history.replaceState(null, "", "?" + qs);
+
   $('#count').textContent = `${list.length}件ヒット`;
 
   const terms = getHighlightTerms(s);
   $('#list').innerHTML = list.length
     ? list.map(row => card(row, terms, s)).join('')
     : '<p>該当なし（クエリやフィルタ条件をご確認ください）</p>';
+
+  // 先読み（ホバーで詳細JSONをキャッシュ）
+  document.querySelectorAll('.card a[href*="details.html"]').forEach(a=>{
+    a.addEventListener('mouseenter', ()=>{
+      const m = a.href.match(/slug=([^&]+)/); if(!m) return;
+      const slug = decodeURIComponent(m[1]);
+      const base = location.origin + location.pathname.replace(/\/[^\/]*$/, '/');
+      fetch(base + `data/ep/${slug}.json`, {cache:'force-cache'});
+    }, {once:true});
+  });
 }
 
 function resetAll(){
@@ -186,6 +228,9 @@ function card(x, terms, state) {
   const titleHL   = highlight(x.title || '', terms);
   const summaryHL = highlightWithNewline(sum, terms);
 
+  // ★ 再生リンクを正規化してから使用（“▶ 詳細／再生へ”）
+  const playUrl = normalizePublicUrl(x.url || '');
+
   return `
   <article class="card">
     <h3><a href="${detailUrl}">${titleHL}</a></h3>
@@ -197,7 +242,7 @@ function card(x, terms, state) {
       <span class="date">${dateStr}</span>
     </div>
     ${sum ? `<p class="summary summary-preline">${summaryHL}</p>` : ''}
-    ${x.url ? `<div style="margin-top:8px"><a class="btn btn-primary" href="${escapeAttr(x.url)}" target="_blank" rel="noopener">▶ 詳細／再生へ</a></div>` : ''}
+    ${playUrl ? `<div style="margin-top:8px"><a class="btn btn-primary" href="${escapeAttr(playUrl)}" target="_blank" rel="noopener">▶ 詳細／再生へ</a></div>` : ''}
   </article>`;
 }
 
