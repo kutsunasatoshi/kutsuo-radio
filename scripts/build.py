@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# RSSから data/episodes.json を生成し、分類＋要旨(summary)を付与する。
+# RSSから data/episodes.json を生成し、分類（感染症/病原体・トピック・タグ）＋要旨(summary)を付与する。
 
 import re, json, os, urllib.request, xml.etree.ElementTree as ET
 from html import unescape
@@ -7,7 +7,7 @@ from html import unescape
 FEED = "https://anchor.fm/s/10684950c/podcast/rss"
 OUT  = "data/episodes.json"
 
-# ---- 掲載誌（略称）推定（既存） ----
+# ---- 掲載誌（略称）推定 ----
 JMAP = [
     (r"\bNEJM\b|New England Journal", "NEJM"),
     (r"Lancet Infectious Diseases|Lancet ID", "Lancet ID"),
@@ -40,7 +40,7 @@ def guess_journal(title: str) -> str:
             if re.search(pat, maybe, re.I): return name
     return ""
 
-# ---- 感染症/病原体（主カテゴリ）・トピック・タグ（既存の辞書） ----
+# ---- 感染症/病原体（主カテゴリ） ----
 INFECTION_PATHOGEN = {
     "COVID-19": r"COVID|SARS[- ]?CoV[- ]?2|コロナ",
     "インフルエンザ": r"インフル|Influenza|H5N1|HPAI",
@@ -96,6 +96,7 @@ INFECTION_PATHOGEN = {
     "関節炎": r"関節炎|arthritis|化膿性関節炎",
 }
 
+# ---- トピック ----
 TOPICS = {
     "ワクチン": r"ワクチン|vaccine|immuni[sz]ation",
     "抗菌薬": r"抗菌薬|antibiotic|β-?lactam|penem|cef|macrolide|doxy|fosfomycin|aminoglycoside",
@@ -108,6 +109,7 @@ TOPICS = {
     "病原体": r"(?:病原体|pathogen|bacteri|virus|fungi)"
 }
 
+# ---- 自由タグ（横断テーマ） ----
 FREE_TAGS = {
     "熱帯医学": r"マラリア|デング|チクングニア|ジカ|熱帯|tropical",
     "節足動物媒介感染症": r"蚊|ダニ|ベクター|vector[- ]borne|媒介",
@@ -136,27 +138,29 @@ def pick_many(text: str, patterns: dict) -> list:
     order = {k:i for i,k in enumerate(patterns.keys())}
     return sorted(set(found), key=lambda x: order.get(x, 10**9))
 
-def strip_html(s: str) -> str:
+# --- 要旨整形（改行保持） ---
+def strip_html_preserve_newlines(s: str) -> str:
     if not s: return ""
     s = unescape(s)
-    s = re.sub(r"<[^>]+>", " ", s)      # タグ除去
-    s = re.sub(r"&[a-zA-Z#0-9]+;", " ", s)  # 残存エンティティ
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
+    s = re.sub(r'(?i)<br\s*/?>', '\n', s)
+    s = re.sub(r'(?i)</p\s*>', '\n\n', s)
+    s = re.sub(r'(?i)</li\s*>', '\n', s)
+    s = re.sub(r'(?i)</h[1-6]\s*>', '\n\n', s)
+    s = re.sub(r'<[^>]+>', ' ', s)          # 残りのタグ除去
+    s = s.replace('\r\n','\n').replace('\r','\n')
+    s = re.sub(r'\n{3,}', '\n\n', s)        # 連続改行を詰める
+    lines = [re.sub(r'[ \t]{2,}', ' ', ln.strip()) for ln in s.split('\n')]
+    return '\n'.join(lines).strip()
 
 def pick_summary(item: ET.Element) -> str:
-    # 1) <description> を最優先
     desc = item.findtext("description")
-    if desc:
-        return strip_html(desc)
-    # 2) iTunes拡張: <itunes:summary>
+    if desc: return strip_html_preserve_newlines(desc)
     for tag in item:
-        if tag.tag.lower().endswith("summary"):
-            return strip_html(tag.text or "")
-    # 3) <content:encoded>
+        if tag.tag.lower().endswith("summary") and (tag.text or "").strip():
+            return strip_html_preserve_newlines(tag.text or "")
     for tag in item:
-        if tag.tag.lower().endswith("encoded"):
-            return strip_html(tag.text or "")
+        if tag.tag.lower().endswith("encoded") and (tag.text or "").strip():
+            return strip_html_preserve_newlines(tag.text or "")
     return ""
 
 # ---- RSS取得→解析 ----
