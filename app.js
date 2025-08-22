@@ -1,16 +1,13 @@
-// app.js（強化検索版：タイトル/要旨/誌名/カテゴリ/病原体/トピック/タグを横断）
-// サポート：AND（スペース）, OR（|）, 除外（-語）, フレーズ検索（"..."）
-// 既存のフィルタ・並び替え・件数・詳細ページ・ハイライトを維持
-
+// app.js（軽量 index.json 版：全文）
 let items = [];
 const $  = (s) => document.querySelector(s);
 
 async function load() {
   try {
-    const res = await fetch('data/episodes.json?t=' + Date.now(), { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status} when fetching episodes.json`);
+    const res = await fetch('data/index.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status} when fetching index.json`);
     items = await res.json();
-    if (!Array.isArray(items)) throw new Error('episodes.json is not an array');
+    if (!Array.isArray(items)) throw new Error('index.json is not an array');
     initFilters(items);
     wireUI();
     render();
@@ -52,7 +49,7 @@ function fillSelect(sel, values) {
 
 function getState(){
   return {
-    q:  ($('#q')?.value || '').replace(/\u3000/g,' ').trim(), // 全角空白→半角
+    q:  ($('#q')?.value || '').replace(/\u3000/g,' ').trim(),
     fi: $('#f-infection')?.value || '',
     fj: $('#f-journal')?.value   || '',
     fd: $('#f-design')?.value    || '',
@@ -63,48 +60,26 @@ function getState(){
   };
 }
 
-/* ===================== 強化検索ロジック ===================== */
-// クエリを解析して { includeGroups: [[term|phrase]...], exclude: [...], highlight: [...] } を返す
+/* -------- 強化検索（AND/OR/"..."/-除外） -------- */
 function parseQuery(qRaw){
   const q = (qRaw || '').trim();
   if (!q) return { includeGroups: [], exclude: [], highlight: [] };
-
-  // フレーズ "..." を先に抜き出す
-  const phrases = [];
-  let rest = q.replace(/"([^"]+)"/g, (_, p) => { phrases.push(p.trim()); return ' '; });
-
-  // 残りを空白で分割しつつ OR（|）対応
+  const phrases = []; let rest = q.replace(/"([^"]+)"/g, (_, p) => { phrases.push(p.trim()); return ' '; });
   const tokens = rest.split(/\s+/).filter(Boolean);
-  const includeGroups = []; // AND の各要素。各要素は OR の配列
-  const exclude = [];
-
-  // まずフレーズを AND 条件に追加
+  const includeGroups = []; const exclude = [];
   for (const ph of phrases) includeGroups.push([ph]);
-
   for (const t of tokens) {
-    if (t.startsWith('-') && t.length > 1) { // 除外
-      exclude.push(t.slice(1));
-      continue;
-    }
-    // OR（|）で分割
-    const orGroup = t.split('|').map(s => s.trim()).filter(Boolean);
+    if (t.startsWith('-') && t.length>1) { exclude.push(t.slice(1)); continue; }
+    const orGroup = t.split('|').map(s=>s.trim()).filter(Boolean);
     if (orGroup.length) includeGroups.push(orGroup);
   }
-
-  // ハイライト用語：すべての包含語（ORの各要素）とフレーズ、除外語は除く
-  const highlight = [
-    ...phrases,
-    ...includeGroups.flatMap(g => g)
-  ].filter(Boolean);
-
+  const highlight = [...phrases, ...includeGroups.flatMap(g=>g)].filter(Boolean);
   return { includeGroups, exclude, highlight };
 }
-
-// レコードを正規化して連結（検索対象フィールドをまとめて1本のテキストに）
 function recordText(x){
   const parts = [
     x.title || '',
-    x.summary || '',
+    x.summary_short || '',
     x.journal || '',
     x.infection_type || '',
     x.study_design || '',
@@ -114,41 +89,30 @@ function recordText(x){
   ];
   return parts.join('\n').toLowerCase();
 }
-
-// includeGroups / exclude でマッチ判定
 function buildPredicate(qRaw){
   const { includeGroups, exclude } = parseQuery(qRaw);
-  if (includeGroups.length === 0 && exclude.length === 0) {
-    return () => true; // クエリ空なら無条件で通す
-  }
+  if (includeGroups.length===0 && exclude.length===0) return ()=>true;
   return (x) => {
     const text = recordText(x);
-    // AND 各群：群の中のいずれか（OR）が含まれていること
-    for (const orGroup of includeGroups) {
-      let ok = false;
-      for (const term of orGroup) {
-        if (!term) continue;
-        if (text.includes(term.toLowerCase())) { ok = true; break; }
+    for (const orGroup of includeGroups){
+      let ok=false;
+      for (const term of orGroup){
+        if (term && text.includes(term.toLowerCase())) { ok=true; break; }
       }
       if (!ok) return false;
     }
-    // 除外語は含まれていないこと
-    for (const ex of exclude) {
+    for (const ex of exclude){
       if (ex && text.includes(ex.toLowerCase())) return false;
     }
     return true;
   };
 }
-
 function getHighlightTerms(state){
   const parsed = parseQuery(state.q);
-  // フィルタで選ばれている語もハイライト対象に足す
-  const extra = [state.fi, state.fj, state.fd, state.fp, state.ft, state.fg].filter(Boolean);
-  const terms = [...parsed.highlight, ...extra];
-  // 重複除去＆長い語優先
-  return [...new Set(terms)].sort((a,b)=>b.length - a.length);
+  const extra = [state.fi,state.fj,state.fd,state.fp,state.ft,state.fg].filter(Boolean);
+  return [...new Set([...parsed.highlight, ...extra])].sort((a,b)=>b.length-a.length);
 }
-/* =========================================================== */
+/* ---------------------------------------------- */
 
 function render() {
   const s = getState();
@@ -190,17 +154,15 @@ function card(x, terms, state) {
   const topics    = (x.topics    || []).map(t => `<span class="pill pill-green">${escapeHtml(t)}</span>`).join('');
   const tags      = (x.tags      || []).map(t => `<span class="pill pill-purple">#${escapeHtml(t)}</span>`).join('');
 
-  // 詳細へ検索条件も引き継ぎ（ハイライト継続）
+  // 詳細ページは slug 指定で1件JSONのみ取得
   const qs = new URLSearchParams({
-    id: String(x.id),
-    q: state.q || '',
-    fi: state.fi || '', fj: state.fj || '', fd: state.fd || '',
+    slug: String(x.slug),
+    q: state.q || '', fi: state.fi || '', fj: state.fj || '', fd: state.fd || '',
     fp: state.fp || '', ft: state.ft || '', fg: state.fg || ''
   }).toString();
   const detailUrl = `details.html?${qs}`;
 
-  const raw = x.summary || '';
-  const sum = truncateLines(raw, 3, 220);
+  const sum = x.summary_short || '';
   const titleHL   = highlight(x.title || '', terms);
   const summaryHL = highlightWithNewline(sum, terms);
 
@@ -219,35 +181,18 @@ function card(x, terms, state) {
   </article>`;
 }
 
-/* ---------- ユーティリティ ---------- */
+/* util */
 function escapeHtml(s){return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function escapeAttr(s){return String(s).replace(/"/g,'&quot;')}
 function uniq(arr){return [...new Set((arr||[]).filter(Boolean))]}
-
 function escapeRegExp(s){return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}
 function highlight(text, terms){
-  let html = escapeHtml(String(text||''));
-  for (const t of terms) {
-    if (!t) continue;
-    html = html.replace(new RegExp(escapeRegExp(t), 'gi'), m => `<mark>${m}</mark>`);
-  }
+  let html = escapeHtml(String(text||'')); for (const t of terms){ if (t) html = html.replace(new RegExp(escapeRegExp(t),'gi'), m=>`<mark>${m}</mark>`); }
   return html;
 }
 function highlightWithNewline(text, terms){
-  let html = escapeHtml(String(text||'')).replace(/\n/g,'<br>');
-  for (const t of terms) {
-    if (!t) continue;
-    html = html.replace(new RegExp(escapeRegExp(t), 'gi'), m => `<mark>${m}</mark>`);
-  }
+  let html = escapeHtml(String(text||'')).replace(/\n/g,'<br>'); for (const t of terms){ if (t) html = html.replace(new RegExp(escapeRegExp(t),'gi'), m=>`<mark>${m}</mark>`); }
   return html;
-}
-function truncateLines(s, maxLines=3, maxChars=220){
-  const text = String(s || '').trim();
-  if (!text) return '';
-  const lines = text.split('\n');
-  let clipped = lines.slice(0, maxLines).join('\n');
-  if (clipped.length > maxChars) clipped = clipped.slice(0, maxChars-1) + '…';
-  return clipped;
 }
 
 load();
