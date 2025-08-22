@@ -1,36 +1,10 @@
-// app.js（軽量 index.json 版 + クリエイターURL→公開URLの正規化 + 強化検索/ハイライト）
+// app.js（軽量 index.json 版）
 // - 一覧は data/index.json を使用（高速）
 // - 詳細は details.html?slug=... で ep/<slug>.json を1件取得
-// - 外部リンク（再生ボタン）は normalizePublicUrl() で creators→podcasters 等に正規化してから使用
+// - 外部リンク（再生ボタン）は x.url をそのまま使用（Creators のまま）
 
 let items = [];
 const $  = (s) => document.querySelector(s);
-
-/* ====== 外部リンクの公開URL正規化 ======
-   creators.spotify.com → podcasters.spotify.com/pod/show/<handle>/episodes/<slug>
-   anchor.fm → podcasters.spotify.com に寄せる
-================================================ */
-function normalizePublicUrl(u){
-  if(!u) return '';
-  try{
-    const url = new URL(u);
-    // creators → podcasters（公開ページ）
-    if (url.hostname === 'creators.spotify.com'){
-      const m = url.pathname.match(/^\/pod\/profile\/([^/]+)\/episodes\/([^/?#]+)/);
-      if (m){
-        const [, handle, slug] = m;
-        return `https://podcasters.spotify.com/pod/show/${handle}/episodes/${slug}`;
-      }
-    }
-    // 旧 anchor → podcasters へ寄せる
-    if (url.hostname === 'anchor.fm'){
-      return u.replace('https://anchor.fm/', 'https://podcasters.spotify.com/');
-    }
-    return u;
-  }catch{
-    return u;
-  }
-}
 
 async function load() {
   try {
@@ -53,12 +27,12 @@ function wireUI(){
   });
   $('#reset')?.addEventListener('click', resetAll);
 
-  // 共有ボタン（任意：存在すれば使える）
+  // 共有ボタン（存在すれば使用可能）
   $('#share')?.addEventListener('click', async ()=>{
     try{
       await navigator.clipboard.writeText(location.href);
-      alert('現在の検索条件のURLをコピーしました。');
-    }catch(e){ alert('コピーに失敗しました'); }
+      alert('現在の検索条件のURLをコピーした。');
+    }catch(e){ alert('コピーに失敗した。'); }
   });
 }
 
@@ -70,7 +44,7 @@ function initFilters(data) {
   fillSelect('#f-topic',     uniq(data.flatMap(d => d.topics    || [])));
   fillSelect('#f-tag',       uniq(data.flatMap(d => d.tags      || [])));
 
-  // 反応を軽く（デバウンス）
+  // 入力デバウンス
   const onInputDebounced = (fn, ms=150) => {
     let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); };
   };
@@ -228,8 +202,8 @@ function card(x, terms, state) {
   const titleHL   = highlight(x.title || '', terms);
   const summaryHL = highlightWithNewline(sum, terms);
 
-  // ★ 再生リンクを正規化してから使用（“▶ 詳細／再生へ”）
-  const playUrl = normalizePublicUrl(x.url || '');
+  // ★ Creators の URL をそのまま使用
+  const playUrl = x.url || '';
 
   return `
   <article class="card">
