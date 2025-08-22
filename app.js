@@ -17,6 +17,26 @@ async function load() {
   }
 }
 
+function normalizePublicUrl(u){
+  if(!u) return '';
+  try {
+    const url = new URL(u);
+    // creators → podcasters（公開ページ）
+    const m = url.hostname === 'creators.spotify.com'
+      ? url.pathname.match(/^\/pod\/profile\/([^/]+)\/episodes\/([^/?#]+)/)
+      : null;
+    if (m) {
+      const [, handle, slug] = m;
+      return `https://podcasters.spotify.com/pod/show/${handle}/episodes/${slug}`;
+    }
+    // 旧 anchor → podcasters へ寄せる
+    if (url.hostname === 'anchor.fm') {
+      return u.replace('https://anchor.fm/', 'https://podcasters.spotify.com/');
+    }
+    return u;
+  } catch { return u; }
+}
+
 function wireUI(){
   $('#toggle-filters')?.addEventListener('click', ()=>{
     const d = $('#filters'); if(!d) return; d.open = !d.open;
