@@ -1,4 +1,4 @@
-// details.js（1件JSON取得 + 関連表示 + ハイライト：論文リンクなし）
+// details.js（1件JSON取得 + 再生ボタン + 関連表示 + ハイライト）
 const $ = (s)=>document.querySelector(s);
 
 function getParam(name){ const u=new URL(location.href); return u.searchParams.get(name)||''; }
@@ -62,6 +62,7 @@ function renderRelated(current, indexItems, params){
 
   const base = location.origin + location.pathname.replace(/\/[^\/]*$/, '/');
   try{
+    // 1件だけ取得（高速）
     const res = await fetch(base + `data/ep/${encodeURIComponent(slug)}.json?t=`+Date.now(), {cache:'no-store'});
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const item = await res.json();
@@ -71,6 +72,12 @@ function renderRelated(current, indexItems, params){
     const pathogens = (item.pathogens||[]).map(p=>pill('pill-blue', p)).join('');
     const topics    = (item.topics   ||[]).map(t=>pill('pill-green', t)).join('');
     const tags      = (item.tags     ||[]).map(t=>pill('pill-purple', '#'+t)).join('');
+
+    // ★ ポッドキャストへのリンク（RSSの url ）を復活
+    const buttons = [];
+    if (item.url) {
+      buttons.push(`<a class="btn btn-primary" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">▶ 再生／元ページへ</a>`);
+    }
 
     $('#detail').innerHTML = `
       <h2 class="detail-title">${highlight(item.title||'', terms)}</h2>
@@ -83,11 +90,12 @@ function renderRelated(current, indexItems, params){
       ${(pathogens||topics||tags) ? `<div class="detail-pills">${pathogens}${topics}${tags}</div>` : ''}
       ${item.summary ? `<div class="detail-summary">${highlight(item.summary, terms)}</div>` : ''}
       <div class="detail-actions">
+        ${buttons.join(' ')}
         <a class="btn" href="./">← 一覧へ戻る</a>
       </div>
     `;
 
-    // 関連は軽量 index.json から拾う
+    // 関連は軽量 index.json から
     const resIdx = await fetch(base + 'data/index.json?t='+Date.now(), {cache:'no-store'});
     const indexItems = resIdx.ok ? await resIdx.json() : [];
     renderRelated(item, indexItems, params);
