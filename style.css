@@ -167,3 +167,25 @@ mark {
 .btn-primary:hover{ border-color:var(--accent) }
 .warn{ background:#3f1d2a; color:#ffb4c0; border:1px solid #b91c1c; padding:12px; border-radius:10px; }
 @media (prefers-color-scheme: light){ .warn{ background:#fff1f2; color:#b91c1c; } }
+/* 関連エピソード */
+.related{ margin-top: 22px; }
+.related-title{ font-size: 16px; margin: 0 0 10px; }
+.related-grid{
+  display:grid; gap:12px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.related-card{
+  background:var(--paper); border:1px solid var(--line); border-radius:12px;
+  padding:12px; box-shadow:var(--shadow);
+}
+.related-card .related-title a{ color:var(--text); text-decoration:none; }
+.related-card .related-title a:hover{ color:var(--brand); text-decoration:underline; }
+.related-meta{ display:flex; gap:8px; align-items:center; color:var(--muted); font-size:12px; margin-bottom:6px; }
+.related-shared{ display:flex; flex-wrap:wrap; gap:6px; }
+.mini{
+  font-size:11px; padding:2px 6px; border-radius:999px;
+  background:var(--tag); color:var(--tag-text); border:1px solid var(--line);
+}
+.mini-blue  { background:#e7f0ff; color:#1e5bb8; border:1px solid var(--line); }
+.mini-green { background:#e6f6ed; color:#1d7f3b; border:1px solid var(--line); }
+.mini-purple{ background:#efe8ff; color:#5a35b8; border:1px solid var(--line); }
