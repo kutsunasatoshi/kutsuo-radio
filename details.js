@@ -1,4 +1,4 @@
-// details.js（1件JSON取得 + 再生ボタン + 関連表示 + ハイライト）
+// details.js（Spotify 再生ボタン付き）
 const $ = (s)=>document.querySelector(s);
 
 function getParam(name){ const u=new URL(location.href); return u.searchParams.get(name)||''; }
@@ -62,7 +62,6 @@ function renderRelated(current, indexItems, params){
 
   const base = location.origin + location.pathname.replace(/\/[^\/]*$/, '/');
   try{
-    // 1件だけ取得（高速）
     const res = await fetch(base + `data/ep/${encodeURIComponent(slug)}.json?t=`+Date.now(), {cache:'no-store'});
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const item = await res.json();
@@ -73,10 +72,10 @@ function renderRelated(current, indexItems, params){
     const topics    = (item.topics   ||[]).map(t=>pill('pill-green', t)).join('');
     const tags      = (item.tags     ||[]).map(t=>pill('pill-purple', '#'+t)).join('');
 
-    // ★ ポッドキャストへのリンク（RSSの url ）を復活
+    // ★ Spotify再生ボタン
     const buttons = [];
     if (item.url) {
-      buttons.push(`<a class="btn btn-primary" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">▶ 再生／元ページへ</a>`);
+      buttons.push(`<a class="btn btn-primary" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">▶ Spotifyで再生</a>`);
     }
 
     $('#detail').innerHTML = `
@@ -95,7 +94,6 @@ function renderRelated(current, indexItems, params){
       </div>
     `;
 
-    // 関連は軽量 index.json から
     const resIdx = await fetch(base + 'data/index.json?t='+Date.now(), {cache:'no-store'});
     const indexItems = resIdx.ok ? await resIdx.json() : [];
     renderRelated(item, indexItems, params);
