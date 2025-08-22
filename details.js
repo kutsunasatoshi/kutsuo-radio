@@ -124,7 +124,7 @@ function renderRelated(current, indexItems, params){
     const buttons = [];
     if (item.url) {
       const playUrl = normalizePublicUrl(item.url);
-      buttons.push(`<a class="btn btn-primary" href="${escapeHtml(playUrl)}" target="_blank" rel="noopener">▶ Spotifyで再生</a>`);
+      buttons.push(`<a class="btn btn-primary" href="${escapeHtml(item.url.replace('https://creators.spotify.com/pod/profile/','https://podcasters.spotify.com/pod/show/'))}" target="_blank" rel="noopener">▶ Spotifyで再生</a>`);
     }
 
     // 詳細本体
