@@ -177,7 +177,7 @@ function card(x, terms, state) {
       <span class="date">${dateStr}</span>
     </div>
     ${sum ? `<p class="summary summary-preline">${summaryHL}</p>` : ''}
-    ${x.url ? `<div style="margin-top:8px"><a class="btn btn-primary" href="${escapeAttr(x.url)}" target="_blank" rel="noopener">▶ 元記事／再生へ</a></div>` : ''}
+    ${x.url ? `<div style="margin-top:8px"><a class="btn btn-primary" href="${escapeAttr(x.url)}" target="_blank" rel="noopener">▶ 詳細／再生へ</a></div>` : ''}
   </article>`;
 }
 
