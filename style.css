@@ -217,4 +217,15 @@ mark {
   margin-right: 10px;
   vertical-align: middle;
 }
+/* ヘッダのロゴサイズを明示（H1とバランス良く） */
+.brand { display:flex; align-items:center; gap:12px; }
+
+/* どちらのクラス名でも効くように二重に指定 */
+.brand-logo, header .logo {
+  height: 1.6em;      /* ← 見出しの約1.6倍。大きければ 1.4em、小さければ 1.8em に調整 */
+  max-height: 48px;   /* ← 上限を設定（必要に応じて 40〜56px の範囲で調整） */
+  width: auto;
+  margin-right: 10px;
+  vertical-align: middle;
+}
 
