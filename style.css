@@ -210,10 +210,11 @@ mark {
 @media (max-width: 480px){
   .brand-logo { height: 1.1em; }
 }
-/* ブランドヘッダー内のロゴサイズ調整 */
+/* ブランドロゴを大きめに調整 */
 .brand-logo {
-  height: 1.5em;   /* ← タイトル文字と同じぐらいにする */
+  height: 2.5em;   /* ← 今より大きく。さらに大きくしたいときは 3em や 3.5em に */
   width: auto;
-  margin-right: 8px;
+  margin-right: 10px;
   vertical-align: middle;
 }
+
