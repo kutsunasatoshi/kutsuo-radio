@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-# RSSから data/episodes.json を生成して保存するスクリプトである。
-# GitHub Actions から毎日実行され、自動デプロイされる。
+# RSSから data/episodes.json を生成し、分類（感染症/病原体・トピック・タグ）を自動付与する。
 
 import re, json, os, urllib.request, xml.etree.ElementTree as ET
 
 FEED = "https://anchor.fm/s/10684950c/podcast/rss"
 OUT  = "data/episodes.json"
 
+# ---- 掲載誌（略称）推定 ----
 JMAP = [
     (r"\bNEJM\b|New England Journal", "NEJM"),
     (r"Lancet Infectious Diseases|Lancet ID", "Lancet ID"),
@@ -25,50 +25,123 @@ JMAP = [
     (r"Nature Reviews Disease Primers", "NRDP"),
     (r"Nature Reviews Microbiology", "NRevMicro"),
     (r"Nature Communications", "Nat Commun"),
+    (r"\bBMJ\b", "BMJ"),
+    (r"\bMMWR\b", "MMWR"),
     (r"BMC Medicine", "BMC Medicine"),
-    (r"BMJ\b", "BMJ"),
-    (r"MMWR", "MMWR"),
 ]
 
-INFECTIONS = {
-    "COVID-19": r"COVID|SARS-CoV-2|XBB|JN\.1|mRNA|オミクロン",
-    "インフルエンザ": r"インフル|Influenza|H5N1|HPAI",
-    "結核": r"結核|tuberculosis|TB",
-    "SFTS": r"\bSFTS\b|重症熱性血小板減少症候群",
-    "HIV": r"\bHIV\b|AIDS",
-    "性感染症": r"淋|梅毒|STI|性病|クラミジア|HPV|mpox",
-    "真菌症": r"カンジダ|アスペル|fung|mycosis|Aspergillus|Candida|Histoplasma",
-    "ダニ媒介": r"ダニ|リケッチア|紅斑熱|ツツガムシ|アナプラズマ",
-    "抗菌薬耐性菌": r"CRE|耐性|ESBL|MRSA|MDR|緑膿菌|アシネト|CPE|セフィデロコル",
-    "寄生虫症": r"マラリア|Vivax|寄生虫",
-    "その他": r".*"
-}
-
-DESIGNS = {
-    "レビュー": r"レビュー|review|primer|overview|update",
-    "ガイドライン": r"ガイドライン|guideline|recommendation|strategy",
-    "RCT": r"無作為|random|trial|第[1-4]相|phase\s?[1-4]",
-    "前向きコホート": r"前向き|prospective",
-    "後ろ向きコホート": r"後ろ向き|retrospective",
-    "サーベイランス": r"サーベイランス|surveillance|registry|cohort",
-    "症例報告": r"症例|case report|case series",
-}
-
-def guess_journal(title):
+def guess_journal(title: str) -> str:
     for pat, name in JMAP:
-        if re.search(pat, title, re.I): return name
+        if re.search(pat, title, re.I):
+            return name
     if "　" in title:
         maybe = title.rsplit("　", 1)[-1]
         for pat, name in JMAP:
-            if re.search(pat, maybe, re.I): return name
+            if re.search(pat, maybe, re.I):
+                return name
     return ""
 
-def guess(patterns, text, default):
-    for k, pat in patterns.items():
-        if re.search(pat, text, re.I): return k
-    return default
+# ---- 感染症/病原体（主カテゴリ） ----
+INFECTION_PATHOGEN = {
+    "COVID-19": r"COVID|SARS[- ]?CoV[- ]?2|コロナ",
+    "インフルエンザ": r"インフル|Influenza|H5N1|HPAI",
+    "SFTS": r"\bSFTS\b|重症熱性血小板減少症候群",
+    "結核": r"結核|tuberculosis|M\.?\s?tuberculosis",
+    "アスペルギルス": r"Aspergillus|アスペル",
+    "チクングニア": r"Chikungunya|チクングニア",
+    "デング": r"Dengue|デング",
+    "ジカ": r"Zika|ジカ",
+    "HIV": r"\bHIV\b|AIDS",
+    "ペスト": r"Yersinia pestis|ペスト",
+    "レジオネラ": r"Legionella|レジオネラ",
+    "感染性心内膜炎": r"心内膜炎|endocarditis",
+    "尿路感染症": r"尿路感染|UTI",
+    "肺炎": r"肺炎|pneumoni",
+    "菌血症/BSI": r"菌血症|BSI|bloodstream infection",
+    "CRBSI": r"\bCRBSI\b|カテーテル関連血流感染",
+    "黄色ブドウ球菌": r"Staphylococcus aureus|黄色ブドウ球菌|S\.?\s?aureus",
+    "緑膿菌": r"Pseudomonas aeruginosa|緑膿菌|P\.?\s?aeruginosa",
+    "腸球菌": r"Enterococcus|腸球菌",
+    "CNS": r"coagulase[- ]negative staphylococci|CNS|コアグラーゼ陰性",
+    "カンジダ": r"Candida|カンジダ",
+    "麻疹": r"麻疹|measles",
+    "風疹": r"風疹|rubella",
+    "マラリア": r"malaria|マラリア|Plasmodium",
+    "腸チフス": r"typhoid|腸チフス|Salmonella Typhi",
+    "CRE": r"\bCRE\b|carbapenem[- ]resistant.*Enterobacter",
+    "VRE": r"\bVRE\b|vancomycin[- ]resistant.*Enterococc",
+    "MRSA": r"\bMRSA\b",
+    "アシネトバクター": r"Acinetobacter|アシネト",
+    "腸内細菌目": r"Enterobacterales|腸内細菌目",
+    "エボラ": r"Ebola|エボラ",
+    "日本紅斑熱": r"日本紅斑熱|Japanese Spotted Fever|Rickettsia japonica",
+    "ツツガムシ病": r"tsutsugamushi|Orientia tsutsugamushi|ツツガムシ",
+    "肺炎球菌": r"Streptococcus pneumoniae|肺炎球菌",
+    "髄膜炎菌": r"Neisseria meningitidis|髄膜炎菌",
+    "淋菌": r"Neisseria gonorrhoeae|淋菌",
+    "クラミジア": r"Chlamydia trachomatis|クラミジア",
+    "梅毒": r"Treponema pallidum|梅毒",
+    "真菌": r"真菌|fungal|mycos",
+    "帯状疱疹": r"帯状疱疹|zoster|VZV",
+    "溶連菌": r"溶連菌|Streptococcus (?:pyogenes|agalactiae)|GAS|GBS",
+    "かぜ": r"かぜ|風邪|common cold",
+    "CMV": r"\bCMV\b|cytomegalovirus|サイトメガロ",
+    "エムポックス": r"\bmpox\b|monkeypox|サル痘",
+    "ウイルス": r"\bvirus\b|ウイルス",
+    "SSI": r"\bSSI\b|手術部位感染|surgical site infection",
+    "髄膜炎": r"髄膜炎|meningitis",
+    "胆嚢炎": r"胆嚢炎|cholecystitis",
+    "肝膿瘍": r"肝膿瘍|liver abscess",
+    "前立腺炎": r"前立腺炎|prostatitis",
+    "皮膚軟部組織感染症": r"皮膚|軟部|SSTI|cellulitis|膿瘍",
+    "関節炎": r"関節炎|arthritis|化膿性関節炎",
+}
 
-# RSS取得 → パース
+# ---- トピック ----
+TOPICS = {
+    "ワクチン": r"ワクチン|vaccine|immuni[sz]ation",
+    "抗菌薬": r"抗菌薬|antibiotic|β-?lactam|penem|cef|macrolide|doxy|fosfomycin|aminoglycoside",
+    "疫学": r"疫学|epidemiolog|incidence|prevalence|trend",
+    "診断": r"診断|NAAT|PCR|抗原|culture|迅速検査|sequenc",
+    "感染対策": r"感染対策|手指衛生|outbreak|サーベイランス|surveillance|ICHE|JHI",
+    "抗ウイルス薬": r"抗ウイルス|antiviral|nirmatrelvir|favipiravir|remdesivir|oseltamivir",
+    "抗真菌薬": r"抗真菌|antifungal|azole|echinocandin|amphotericin",
+    "抗原虫薬": r"antiprotozoal|抗原虫|chloroquine|artemisinin|tafenoquine",
+    "病原体": r"(?:病原体|pathogen|bacteri|virus|fungi)"
+}
+
+# ---- 自由タグ（横断テーマ） ----
+FREE_TAGS = {
+    "熱帯医学": r"マラリア|デング|チクングニア|ジカ|熱帯|tropical",
+    "節足動物媒介感染症": r"蚊|ダニ|ベクター|vector[- ]borne|媒介",
+    "One Health": r"One Health|動物|家畜|環境微生物",
+    "免疫不全": r"免疫不全|immunocompromised|免疫低下",
+    "移植": r"移植|transplant|移植後",
+    "性感染症": r"性感|性行為感染|sexually transmitted|STI",
+    "耐性菌": r"耐性|AMR|resistan|CRE|VRE|MRSA|ESBL|CPE",
+    "小児": r"小児|小児科|pediatric|children",
+    "周産期": r"妊娠|妊婦|周産期|neonat|perinatal|pregnan",
+    "外科感染症": r"手術|術後|外科|SSI",
+    "人工物感染症": r"カテ|人工|デバイス|プロテーゼ|留置|device|prosthe",
+    # 依頼の追加タグ
+    "アウトブレイク": r"outbreak|アウトブレイク",
+    "サーベイランス": r"surveillance|サーベイランス",
+    "院内感染": r"healthcare[- ]associated|hospital[- ]acquired|院内感染|医療関連感染",
+    "重症": r"severe|重症|ICU|集中治療",
+    "高齢者": r"高齢者|elderly|older adult|高齢|frail",
+    "妊娠": r"pregnan|妊娠|妊婦",
+}
+
+def pick_many(text: str, patterns: dict) -> list:
+    found = []
+    for label, pat in patterns.items():
+        if re.search(pat, text, re.I):
+            found.append(label)
+    # 元辞書順を維持して重複除去
+    order = {k:i for i,k in enumerate(patterns.keys())}
+    return sorted(set(found), key=lambda x: order.get(x, 10**9))
+
+# ---- RSS取得→解析 ----
 xml = urllib.request.urlopen(FEED, timeout=30).read().decode("utf-8")
 root = ET.fromstring(xml)
 items = root.find('channel').findall('item')
@@ -80,15 +153,36 @@ for it in items:
     pub   = (it.findtext('pubDate') or "").strip()
     guid  = (it.findtext('guid')  or "").strip()
     _id   = guid or link or title
-    data.append({
+
+    record = {
         "id": _id,
         "title": title,
         "url": link,
         "pubDate": pub,
-        "journal":       guess_journal(title),
-        "infection_type":guess(INFECTIONS, title, "その他"),
-        "study_design":  guess(DESIGNS, title, "不明")
-    })
+        "journal": guess_journal(title),
+        # legacy互換
+        "infection_type": "",
+        "study_design": "",
+        # 新規配列
+        "pathogens": pick_many(title, INFECTION_PATHOGEN),
+        "topics":    pick_many(title, TOPICS),
+        "tags":      pick_many(title, FREE_TAGS),
+    }
+
+    # 代表カテゴリ（空の場合は「その他」）
+    record["infection_type"] = record["pathogens"][0] if record["pathogens"] else "その他"
+
+    # 研究デザイン（簡易推定）
+    if   re.search(r"レビュー|review|primer|overview|update", title, re.I): record["study_design"]="レビュー"
+    elif re.search(r"guideline|ガイドライン|recommendation|strategy", title, re.I): record["study_design"]="ガイドライン"
+    elif re.search(r"random|無作為|第[1-4]相|phase\s?[1-4]|trial", title, re.I):  record["study_design"]="RCT"
+    elif re.search(r"前向き|prospective", title, re.I): record["study_design"]="前向きコホート"
+    elif re.search(r"後ろ向き|retrospective", title, re.I): record["study_design"]="後ろ向きコホート"
+    elif re.search(r"サーベイランス|surveillance|registry|cohort", title, re.I): record["study_design"]="サーベイランス"
+    elif re.search(r"症例|case report|case series", title, re.I): record["study_design"]="症例報告"
+    else: record["study_design"]="不明"
+
+    data.append(record)
 
 os.makedirs("data", exist_ok=True)
 with open(OUT, "w", encoding="utf-8") as f:
