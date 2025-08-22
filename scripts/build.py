@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-# RSSから data/episodes.json を生成し、分類（感染症/病原体・トピック・タグ）を自動付与する。
+# RSSから data/episodes.json を生成し、分類＋要旨(summary)を付与する。
 
 import re, json, os, urllib.request, xml.etree.ElementTree as ET
+from html import unescape
 
 FEED = "https://anchor.fm/s/10684950c/podcast/rss"
 OUT  = "data/episodes.json"
 
-# ---- 掲載誌（略称）推定 ----
+# ---- 掲載誌（略称）推定（既存） ----
 JMAP = [
     (r"\bNEJM\b|New England Journal", "NEJM"),
     (r"Lancet Infectious Diseases|Lancet ID", "Lancet ID"),
@@ -32,16 +33,14 @@ JMAP = [
 
 def guess_journal(title: str) -> str:
     for pat, name in JMAP:
-        if re.search(pat, title, re.I):
-            return name
+        if re.search(pat, title, re.I): return name
     if "　" in title:
         maybe = title.rsplit("　", 1)[-1]
         for pat, name in JMAP:
-            if re.search(pat, maybe, re.I):
-                return name
+            if re.search(pat, maybe, re.I): return name
     return ""
 
-# ---- 感染症/病原体（主カテゴリ） ----
+# ---- 感染症/病原体（主カテゴリ）・トピック・タグ（既存の辞書） ----
 INFECTION_PATHOGEN = {
     "COVID-19": r"COVID|SARS[- ]?CoV[- ]?2|コロナ",
     "インフルエンザ": r"インフル|Influenza|H5N1|HPAI",
@@ -97,7 +96,6 @@ INFECTION_PATHOGEN = {
     "関節炎": r"関節炎|arthritis|化膿性関節炎",
 }
 
-# ---- トピック ----
 TOPICS = {
     "ワクチン": r"ワクチン|vaccine|immuni[sz]ation",
     "抗菌薬": r"抗菌薬|antibiotic|β-?lactam|penem|cef|macrolide|doxy|fosfomycin|aminoglycoside",
@@ -110,7 +108,6 @@ TOPICS = {
     "病原体": r"(?:病原体|pathogen|bacteri|virus|fungi)"
 }
 
-# ---- 自由タグ（横断テーマ） ----
 FREE_TAGS = {
     "熱帯医学": r"マラリア|デング|チクングニア|ジカ|熱帯|tropical",
     "節足動物媒介感染症": r"蚊|ダニ|ベクター|vector[- ]borne|媒介",
@@ -123,7 +120,6 @@ FREE_TAGS = {
     "周産期": r"妊娠|妊婦|周産期|neonat|perinatal|pregnan",
     "外科感染症": r"手術|術後|外科|SSI",
     "人工物感染症": r"カテ|人工|デバイス|プロテーゼ|留置|device|prosthe",
-    # 依頼の追加タグ
     "アウトブレイク": r"outbreak|アウトブレイク",
     "サーベイランス": r"surveillance|サーベイランス",
     "院内感染": r"healthcare[- ]associated|hospital[- ]acquired|院内感染|医療関連感染",
@@ -137,9 +133,31 @@ def pick_many(text: str, patterns: dict) -> list:
     for label, pat in patterns.items():
         if re.search(pat, text, re.I):
             found.append(label)
-    # 元辞書順を維持して重複除去
     order = {k:i for i,k in enumerate(patterns.keys())}
     return sorted(set(found), key=lambda x: order.get(x, 10**9))
+
+def strip_html(s: str) -> str:
+    if not s: return ""
+    s = unescape(s)
+    s = re.sub(r"<[^>]+>", " ", s)      # タグ除去
+    s = re.sub(r"&[a-zA-Z#0-9]+;", " ", s)  # 残存エンティティ
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def pick_summary(item: ET.Element) -> str:
+    # 1) <description> を最優先
+    desc = item.findtext("description")
+    if desc:
+        return strip_html(desc)
+    # 2) iTunes拡張: <itunes:summary>
+    for tag in item:
+        if tag.tag.lower().endswith("summary"):
+            return strip_html(tag.text or "")
+    # 3) <content:encoded>
+    for tag in item:
+        if tag.tag.lower().endswith("encoded"):
+            return strip_html(tag.text or "")
+    return ""
 
 # ---- RSS取得→解析 ----
 xml = urllib.request.urlopen(FEED, timeout=30).read().decode("utf-8")
@@ -152,6 +170,7 @@ for it in items:
     link  = (it.findtext('link')  or "").strip()
     pub   = (it.findtext('pubDate') or "").strip()
     guid  = (it.findtext('guid')  or "").strip()
+    summary = pick_summary(it)
     _id   = guid or link or title
 
     record = {
@@ -160,19 +179,16 @@ for it in items:
         "url": link,
         "pubDate": pub,
         "journal": guess_journal(title),
-        # legacy互換
-        "infection_type": "",
-        "study_design": "",
-        # 新規配列
+        "infection_type": "",   # 代表カテゴリ（後で設定）
+        "study_design": "",     # 推定
         "pathogens": pick_many(title, INFECTION_PATHOGEN),
         "topics":    pick_many(title, TOPICS),
         "tags":      pick_many(title, FREE_TAGS),
+        "summary":   summary
     }
 
-    # 代表カテゴリ（空の場合は「その他」）
     record["infection_type"] = record["pathogens"][0] if record["pathogens"] else "その他"
 
-    # 研究デザイン（簡易推定）
     if   re.search(r"レビュー|review|primer|overview|update", title, re.I): record["study_design"]="レビュー"
     elif re.search(r"guideline|ガイドライン|recommendation|strategy", title, re.I): record["study_design"]="ガイドライン"
     elif re.search(r"random|無作為|第[1-4]相|phase\s?[1-4]|trial", title, re.I):  record["study_design"]="RCT"
