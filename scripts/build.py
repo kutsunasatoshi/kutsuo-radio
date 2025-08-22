@@ -3,9 +3,9 @@
 #  - data/index.json …… 一覧・検索用（軽量）
 #  - data/ep/<slug>.json …… 各エピソード詳細（必要時のみ取得）
 #
-# 変更点：RSSの<link>を公開用URLへ正規化（creators → podcasters など）
+# 変更点：RSSの<link>を公開用URLへ正規化（creators → podcasters、anchor → podcasters）
 
-import re, json, os, urllib.request, urllib.parse, xml.etree.ElementTree as ET, hashlib
+import re, json, os, urllib.request, xml.etree.ElementTree as ET, hashlib
 from html import unescape
 
 FEED = "https://anchor.fm/s/10684950c/podcast/rss"
@@ -31,17 +31,16 @@ def to_public_url(link: str) -> str:
     """
     RSSの<link>をリスナー向け公開URLへ変換する。
     例) creators.spotify.com → podcasters.spotify.com/pod/show/<handle>/episodes/<slug>
-        anchor.fm → podcasters.spotify.com/pod/show/… に寄せる
+        anchor.fm → podcasters.spotify.com に寄せる
     """
     if not link: return ""
     link = link.strip()
 
-    # 旧Anchorドメインは podcasters (公開ページ) に寄せる
+    # 旧 Anchor ドメイン → podcasters（公開ページ）
     if link.startswith("https://anchor.fm/"):
         link = link.replace("https://anchor.fm/", "https://podcasters.spotify.com/")
 
-    # クリエイター用URL → 公開用URL
-    # 例) https://creators.spotify.com/pod/profile/<handle>/episodes/<slug>
+    # creators → podcasters（公開ページ）
     m = re.match(r"https://creators\.spotify\.com/pod/profile/([^/]+)/episodes/([^/?#]+)", link)
     if m:
         handle, slug = m.groups()
