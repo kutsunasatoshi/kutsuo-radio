@@ -4,22 +4,30 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>エピソード詳細 | くつ王レディオ ポータル</title>
-  <link rel="stylesheet" href="style.css" />
-  <meta name="description" content="くつ王レディオ ポータルのエピソード詳細ページ">
-  <link rel="icon" type="image/png" href="assets/favicon.png" sizes="32x32">
-<link rel="shortcut icon" href="assets/favicon.png">
-<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 
+  <!-- favicon / touch icon -->
+  <link rel="icon" type="image/png" href="assets/favicon.png?v=2" sizes="32x32">
+  <link rel="shortcut icon" href="assets/favicon.png?v=2">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=2">
+
+  <meta name="description" content="くつ王レディオ ポータルのエピソード詳細ページ" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+
+<!-- ヘッダー（ロゴ＋タイトル） -->
 <header class="site-header">
-  <div class="container">
-    <h1>エピソード詳細</h1>
-    <p class="subtitle"><a href="./" style="color:inherit;text-decoration:underline;">← 一覧へ戻る</a></p>
+  <div class="container brand">
+    <img class="brand-logo" src="assets/logo.png" alt="くつ王レディオ ロゴ" />
+    <div class="brand-text">
+      <h1>くつ王レディオ ポータル</h1>
+      <p class="subtitle"><a href="./" style="color:inherit;text-decoration:underline;">← 一覧へ戻る</a></p>
+    </div>
   </div>
 </header>
 
 <main class="container">
+  <!-- 詳細本体 -->
   <article id="detail" class="detail-article" aria-live="polite">
     <p>読み込み中…</p>
   </article>
