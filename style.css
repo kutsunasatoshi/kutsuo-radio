@@ -190,42 +190,16 @@ mark {
 .mini-green { background:#e6f6ed; color:#1d7f3b; border:1px solid var(--line); }
 .mini-purple{ background:#efe8ff; color:#5a35b8; border:1px solid var(--line); }
 /* ロゴ付きブランドヘッダー */
+/* ヘッダ部分を横並びに */
 .brand {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: center;   /* 縦位置を中央に揃える */
+  gap: 12px;             /* 画像と文字の間隔 */
 }
-.brand-logo {
-  /* タイトルのフォントサイズと同じくらいの高さ */
-  height: 1.2em;  /* 見出し文字サイズに追従 */
-  width: auto;
-  border-radius: 8px;      /* 角丸にしたくなければ削除 */
-  object-fit: cover;
-}
-.brand-text h1 {
-  margin: 0 0 6px 0;
-  font-size: 24px;         /* 既存の見出しサイズに合わせる */
-  line-height: 1.2;
-}
-@media (max-width: 480px){
-  .brand-logo { height: 1.1em; }
-}
-/* ブランドロゴを大きめに調整 */
-.brand-logo {
-  height: 3em;   /* ← 今より大きく。さらに大きくしたいときは 3em や 3.5em に */
-  width: auto;
-  margin-right: 10px;
-  vertical-align: middle;
-}
-/* ヘッダのロゴサイズを明示（H1とバランス良く） */
-.brand { display:flex; align-items:center; gap:12px; }
 
-/* どちらのクラス名でも効くように二重に指定 */
-.brand-logo, header .logo {
-  height: 1.6em;      /* ← 見出しの約1.6倍。大きければ 1.4em、小さければ 1.8em に調整 */
-  max-height: 48px;   /* ← 上限を設定（必要に応じて 40〜56px の範囲で調整） */
+/* ロゴサイズ調整 */
+.brand-logo {
+  height: 40px;    /* 見出し文字と同じくらいの高さに */
   width: auto;
-  margin-right: 10px;
-  vertical-align: middle;
 }
 
