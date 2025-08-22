@@ -1,19 +1,11 @@
-// details.js（1件JSON取得 + 関連表示 + ハイライト：全文）
+// details.js（1件JSON取得 + 関連表示 + ハイライト：論文リンクなし）
 const $ = (s)=>document.querySelector(s);
 
 function getParam(name){ const u=new URL(location.href); return u.searchParams.get(name)||''; }
-function getAllParams(){
-  const u = new URL(location.href);
-  const p = {}; ['q','fi','fj','fd','fp','ft','fg'].forEach(k=>p[k]=u.searchParams.get(k)||'');
-  return p;
-}
+function getAllParams(){ const u=new URL(location.href); const p={}; ['q','fi','fj','fd','fp','ft','fg'].forEach(k=>p[k]=u.searchParams.get(k)||''); return p; }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function escapeRegExp(s){return String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}
-function highlight(text, terms){
-  let html = escapeHtml(String(text||'')).replace(/\n/g,'<br>');
-  for (const t of terms){ if (!t) continue; html = html.replace(new RegExp(escapeRegExp(t),'gi'), m=>`<mark>${m}</mark>`); }
-  return html;
-}
+function highlight(text, terms){ let html=escapeHtml(String(text||'')).replace(/\n/g,'<br>'); for(const t of terms){ if(!t)continue; html=html.replace(new RegExp(escapeRegExp(t),'gi'), m=>`<mark>${m}</mark>`);} return html; }
 function pill(cls, text){ return `<span class="pill ${cls}">${escapeHtml(text)}</span>` }
 function tag(text){ return `<span class="tag">${escapeHtml(text)}</span>` }
 
@@ -68,7 +60,6 @@ function renderRelated(current, indexItems, params){
   const params = getAllParams();
   const terms = [...new Set([...(params.q||'').split(/\s+/).filter(Boolean), params.fi, params.fj, params.fd, params.fp, params.ft, params.fg].filter(Boolean))];
 
-  // 1件だけ取得（高速）
   const base = location.origin + location.pathname.replace(/\/[^\/]*$/, '/');
   try{
     const res = await fetch(base + `data/ep/${encodeURIComponent(slug)}.json?t=`+Date.now(), {cache:'no-store'});
@@ -81,10 +72,6 @@ function renderRelated(current, indexItems, params){
     const topics    = (item.topics   ||[]).map(t=>pill('pill-green', t)).join('');
     const tags      = (item.tags     ||[]).map(t=>pill('pill-purple', '#'+t)).join('');
 
-    const buttons=[];
-    if(item.paper_url) buttons.push(`<a class="btn btn-primary" href="${escapeHtml(item.paper_url)}" target="_blank" rel="noopener">論文（ジャーナル）</a>`);
-    if(item.pubmed_url) buttons.push(`<a class="btn" href="${escapeHtml(item.pubmed_url)}" target="_blank" rel="noopener">PubMed</a>`);
-
     $('#detail').innerHTML = `
       <h2 class="detail-title">${highlight(item.title||'', terms)}</h2>
       <div class="detail-meta">
@@ -96,12 +83,11 @@ function renderRelated(current, indexItems, params){
       ${(pathogens||topics||tags) ? `<div class="detail-pills">${pathogens}${topics}${tags}</div>` : ''}
       ${item.summary ? `<div class="detail-summary">${highlight(item.summary, terms)}</div>` : ''}
       <div class="detail-actions">
-        ${buttons.join(' ')}
         <a class="btn" href="./">← 一覧へ戻る</a>
       </div>
     `;
 
-    // 関連は軽量 index.json から拾う（高速）
+    // 関連は軽量 index.json から拾う
     const resIdx = await fetch(base + 'data/index.json?t='+Date.now(), {cache:'no-store'});
     const indexItems = resIdx.ok ? await resIdx.json() : [];
     renderRelated(item, indexItems, params);
