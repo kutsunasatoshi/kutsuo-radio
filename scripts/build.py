@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
-# RSS → data/episodes.json を生成し、
-# ・分類（感染症/病原体・トピック・タグ）
-# ・要旨（summary：改行保持）
-# ・論文リンク（paper_url: DOIのジャーナルページ / pubmed_url）
-# を付与する。
+# 速いサイトのための二段構えビルド：
+# - data/index.json …… 一覧・検索用（軽量）
+# - data/ep/<slug>.json …… 各エピソード詳細（必要時のみ取得）
 
-import re, json, os, urllib.request, urllib.parse, xml.etree.ElementTree as ET, ssl
+import re, json, os, urllib.request, urllib.parse, xml.etree.ElementTree as ET, ssl, hashlib
 from html import unescape
 
 FEED = "https://anchor.fm/s/10684950c/podcast/rss"
-OUT  = "data/episodes.json"
+OUT_INDEX = "data/index.json"
+OUT_DIR_EP = "data/ep"
 
-# ------- ネットワーク共通 -------
+# ------- HTTP util -------
 def http_get_json(url, timeout=10):
     try:
         ctx = ssl.create_default_context()
@@ -24,27 +23,21 @@ def http_get_json(url, timeout=10):
         return None
 
 def norm(s: str) -> str:
-    s = s or ""
-    s = s.strip()
-    s = s.replace("\u3000", " ")  # 全角スペース→半角
-    s = re.sub(r"\s+", " ", s)
-    return s
+    s = (s or "").strip().replace("\u3000", " ")
+    return re.sub(r"\s+", " ", s)
 
+# ざっくり一致度
 def similar(a: str, b: str) -> float:
-    a = norm(a).lower()
-    b = norm(b).lower()
-    # ざっくり一致度：全一致=1 / 片方が他方を含む=0.9 / 単語共有率
+    a = norm(a).lower(); b = norm(b).lower()
     if not a or not b: return 0.0
     if a == b: return 1.0
     if a in b or b in a: return 0.9
     aset = set(re.findall(r"[a-z0-9\u3040-\u30ff\u4e00-\u9fff]+", a))
     bset = set(re.findall(r"[a-z0-9\u3040-\u30ff\u4e00-\u9fff]+", b))
     if not aset or not bset: return 0.0
-    inter = len(aset & bset)
-    union = len(aset | bset)
-    return inter / union
+    return len(aset & bset) / len(aset | bset)
 
-# ------- 掲載誌（略称）推定（既存） -------
+# ------- 掲載誌（略称） -------
 JMAP = [
     (r"\bNEJM\b|New England Journal", "NEJM"),
     (r"Lancet Infectious Diseases|Lancet ID", "Lancet ID"),
@@ -76,7 +69,7 @@ def guess_journal(title: str) -> str:
             if re.search(pat, maybe, re.I): return name
     return ""
 
-# ------- 分類辞書（省略；既存のまま） -------
+# ------- 分類辞書（省略せずそのまま） -------
 INFECTION_PATHOGEN = {
     "COVID-19": r"COVID|SARS[- ]?CoV[- ]?2|コロナ",
     "インフルエンザ": r"インフル|Influenza|H5N1|HPAI",
@@ -168,7 +161,7 @@ def pick_many(text: str, patterns: dict) -> list:
     order = {k:i for i,k in enumerate(patterns.keys())}
     return sorted(set(found), key=lambda x: order.get(x, 10**9))
 
-# ------- 要旨整形（改行保持） -------
+# ------- 要旨（改行保持） -------
 def strip_html_preserve_newlines(s: str) -> str:
     if not s: return ""
     s = unescape(s)
@@ -193,33 +186,26 @@ def pick_summary(item: ET.Element) -> str:
             return strip_html_preserve_newlines(tag.text or "")
     return ""
 
-# ------- 論文リンクの自動取得 -------
-# Crossref: https://api.crossref.org/works?query.title=...&rows=5
+# ------- 論文リンク（Crossref / PubMed） -------
 def find_crossref_url(title: str) -> str:
     q = urllib.parse.quote(norm(title))
     url = f"https://api.crossref.org/works?query.title={q}&rows=5"
     data = http_get_json(url, timeout=8)
     if not data or "message" not in data or "items" not in data["message"]:
         return ""
-    best = ""
-    best_sim = 0.0
+    best, best_sim = "", 0.0
     for it in data["message"]["items"]:
-        tlist = it.get("title") or []
-        cand_title = tlist[0] if tlist else ""
+        cand_title = (it.get("title") or [""])[0]
         sim = similar(title, cand_title)
-        # コンテナ（誌名）があればちょっと加点
         cont = (it.get("container-title") or [""])[0]
-        if cont and guess_journal(cont):
-            sim += 0.05
+        if cont and guess_journal(cont): sim += 0.05
         if sim > best_sim:
             doi = it.get("DOI")
             if doi:
                 best_sim = sim
                 best = "https://doi.org/" + doi
-    # そこそこ以上なら採用
     return best if best_sim >= 0.5 else ""
 
-# PubMed: esearch → PMID（先頭） → pubmedリンク
 def find_pubmed_url(title: str) -> str:
     term = urllib.parse.quote(norm(title))
     url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&sort=relevance&retmax=1&term={term}"
@@ -233,13 +219,28 @@ def find_pubmed_url(title: str) -> str:
         pass
     return ""
 
-# ------- RSS 取得→ episodes.json 生成 -------
+# ------- ヘルパ：スラッグ＆要旨短縮 -------
+def slugify(s: str) -> str:
+    # だいたい一意：id or title からハッシュを切る
+    h = hashlib.sha1(s.encode('utf-8', errors='ignore')).hexdigest()[:16]
+    return h
+
+def truncate_multiline(text: str, max_lines=3, max_chars=220) -> str:
+    if not text: return ""
+    lines = text.split('\n')
+    clipped = '\n'.join(lines[:max_lines])
+    return (clipped[:max_chars-1] + '…') if len(clipped) > max_chars else clipped
+
+# ------- ビルド本体 -------
 def main():
     xml = urllib.request.urlopen(FEED, timeout=30).read().decode("utf-8", errors="ignore")
     root = ET.fromstring(xml)
     items = root.find('channel').findall('item')
 
-    out = []
+    os.makedirs("data", exist_ok=True)
+    os.makedirs(OUT_DIR_EP, exist_ok=True)
+
+    index = []  # 軽量
     for it in items:
         title = norm(it.findtext('title') or "")
         link  = norm(it.findtext('link') or "")
@@ -247,50 +248,57 @@ def main():
         guid  = norm(it.findtext('guid') or "")
         summary = pick_summary(it)
         _id = guid or link or title
+        slug = slugify(_id)
 
-        record = {
+        # 共通フィールド
+        base = {
             "id": _id,
+            "slug": slug,
             "title": title,
-            "url": link,           # ポッドキャストのエピソードURL
+            "url": link,          # ポッドキャストのエピソードURL
             "pubDate": pub,
             "journal": guess_journal(title),
-            "infection_type": "",  # 代表カテゴリ
-            "study_design": "",    # 簡易推定
             "pathogens": pick_many(title, INFECTION_PATHOGEN),
             "topics":    pick_many(title, TOPICS),
             "tags":      pick_many(title, FREE_TAGS),
-            "summary":   summary,
-            "paper_url": "",       # ← これを追加（DOIのジャーナル公式）
-            "pubmed_url": ""       # ← これを追加（PubMed）
         }
-
-        # 代表カテゴリ
-        record["infection_type"] = record["pathogens"][0] if record["pathogens"] else "その他"
-
-        # 研究デザイン（ざっくり）
+        # 代表カテゴリ・研究デザイン
+        base["infection_type"] = base["pathogens"][0] if base["pathogens"] else "その他"
         t = title
-        if   re.search(r"レビュー|review|primer|overview|update", t, re.I): record["study_design"]="レビュー"
-        elif re.search(r"guideline|ガイドライン|recommendation|strategy", t, re.I): record["study_design"]="ガイドライン"
-        elif re.search(r"random|無作為|第[1-4]相|phase\s?[1-4]|trial", t, re.I):  record["study_design"]="RCT"
-        elif re.search(r"前向き|prospective", t, re.I): record["study_design"]="前向きコホート"
-        elif re.search(r"後ろ向き|retrospective", t, re.I): record["study_design"]="後ろ向きコホート"
-        elif re.search(r"サーベイランス|surveillance|registry|cohort", t, re.I): record["study_design"]="サーベイランス"
-        elif re.search(r"症例|case report|case series", t, re.I): record["study_design"]="症例報告"
-        else: record["study_design"]="不明"
+        if   re.search(r"レビュー|review|primer|overview|update", t, re.I): base["study_design"]="レビュー"
+        elif re.search(r"guideline|ガイドライン|recommendation|strategy", t, re.I): base["study_design"]="ガイドライン"
+        elif re.search(r"random|無作為|第[1-4]相|phase\s?[1-4]|trial", t, re.I):  base["study_design"]="RCT"
+        elif re.search(r"前向き|prospective", t, re.I): base["study_design"]="前向きコホート"
+        elif re.search(r"後ろ向き|retrospective", t, re.I): base["study_design"]="後ろ向きコホート"
+        elif re.search(r"サーベイランス|surveillance|registry|cohort", t, re.I): base["study_design"]="サーベイランス"
+        elif re.search(r"症例|case report|case series", t, re.I): base["study_design"]="症例報告"
+        else: base["study_design"]="不明"
 
-        # 論文リンクの自動取得（軽量・失敗しても無視）
-        # まず Crossref（DOI）を当てにいく
-        record["paper_url"]  = find_crossref_url(title) or ""
-        # PubMedも試す
-        record["pubmed_url"] = find_pubmed_url(title) or ""
+        # 論文リンク（失敗しても無視）
+        paper_url  = find_crossref_url(title) or ""
+        pubmed_url = find_pubmed_url(title) or ""
 
-        out.append(record)
+        # —— 詳細 JSON（重め）
+        detail = dict(base)
+        detail["summary"] = summary
+        detail["paper_url"] = paper_url
+        detail["pubmed_url"] = pubmed_url
 
-    os.makedirs("data", exist_ok=True)
-    with open(OUT, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=2)
+        with open(os.path.join(OUT_DIR_EP, f"{slug}.json"), "w", encoding="utf-8") as f:
+            json.dump(detail, f, ensure_ascii=False, indent=2)
 
-    print(f"wrote {len(out)} records to {OUT}")
+        # —— 軽量 index.json 行（要旨は短縮版）
+        row = dict(base)
+        row["summary_short"] = truncate_multiline(summary, 3, 220)
+        index.append(row)
+
+    # PubDate降順（新着優先）
+    index.sort(key=lambda x: x.get("pubDate",""), reverse=True)
+
+    with open(OUT_INDEX, "w", encoding="utf-8") as f:
+        json.dump(index, f, ensure_ascii=False, indent=2)
+
+    print(f"wrote {len(index)} records to {OUT_INDEX} and details to {OUT_DIR_EP}/<slug>.json")
 
 if __name__ == "__main__":
     main()
