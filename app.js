@@ -1,4 +1,4 @@
-// app.js（詳細ページ対応版：全文）
+// app.js（要旨整形＋ハイライト版：全文）
 let items = [];
 const $  = (s) => document.querySelector(s);
 
@@ -12,9 +12,8 @@ async function load() {
     wireUI();
     render();
   } catch (e) {
-    const el = $('#list');
-    if (el) el.innerHTML = `<div class="warn">読み込みエラー：${escapeHtml(e.message)}</div>`;
-    const c = $('#count'); if (c) c.textContent = '0件ヒット（読み込みエラー）';
+    $('#list').innerHTML = `<div class="warn">読み込みエラー：${escapeHtml(e.message)}</div>`;
+    $('#count').textContent = '0件ヒット（読み込みエラー）';
   }
 }
 
@@ -50,7 +49,7 @@ function fillSelect(sel, values) {
 
 function getState(){
   return {
-    q:  ($('#q')?.value || '').trim().toLowerCase(),
+    q:  ($('#q')?.value || '').trim(),
     fi: $('#f-infection')?.value || '',
     fj: $('#f-journal')?.value   || '',
     fd: $('#f-design')?.value    || '',
@@ -61,11 +60,19 @@ function getState(){
   };
 }
 
+function getHighlightTerms(s){
+  const terms = [];
+  if (s.q) terms.push(...s.q.split(/\s+/).filter(Boolean));
+  [s.fi, s.fj, s.fd, s.fp, s.ft, s.fg].forEach(x => { if (x) terms.push(x); });
+  return [...new Set(terms)].sort((a,b)=>b.length - a.length);
+}
+
 function render() {
   const s = getState();
+  const qLower = s.q.toLowerCase();
 
   let list = items.filter(x =>
-    (!s.q  || (x.title || '').toLowerCase().includes(s.q)) &&
+    (!qLower || (x.title || '').toLowerCase().includes(qLower) || (x.summary || '').toLowerCase().includes(qLower)) &&
     (!s.fi || (x.infection_type || '') === s.fi) &&
     (!s.fj || (x.journal || '') === s.fj) &&
     (!s.fd || (x.study_design || '') === s.fd) &&
@@ -80,9 +87,9 @@ function render() {
 
   $('#count').textContent = `${list.length}件ヒット`;
 
-  const container = $('#list');
-  container.innerHTML = list.length
-    ? list.map(row => card(row)).join('')
+  const terms = getHighlightTerms(s);
+  $('#list').innerHTML = list.length
+    ? list.map(row => card(row, terms)).join('')
     : '<p>該当なし（episodes.jsonは空配列か、フィルタで絞り込み過ぎ）</p>';
 }
 
@@ -93,23 +100,24 @@ function resetAll(){
   render();
 }
 
-function card(x) {
+function card(x, terms) {
   const d = x.pubDate ? new Date(x.pubDate) : null;
   const dateStr = d ? d.toLocaleDateString('ja-JP') : '';
-
   const pathogens = (x.pathogens || []).map(p => `<span class="pill pill-blue">${escapeHtml(p)}</span>`).join('');
   const topics    = (x.topics    || []).map(t => `<span class="pill pill-green">${escapeHtml(t)}</span>`).join('');
   const tags      = (x.tags      || []).map(t => `<span class="pill pill-purple">#${escapeHtml(t)}</span>`).join('');
 
-  // 詳細ページURL（idをそのまま使う。URLに含めるためエンコード）
-  const detailUrl = `details.html?id=${encodeURIComponent(String(x.id))}`;
+  const qs = new URLSearchParams(getState()).toString();
+  const detailUrl = `details.html?id=${encodeURIComponent(String(x.id))}&${qs}`;
 
   const raw = x.summary || '';
-  const sum = truncateForCard(raw, 160);
+  const sum = truncateLines(raw, 3, 220);
+  const titleHL   = highlight(x.title || '', terms);
+  const summaryHL = highlightWithNewline(sum, terms);
 
   return `
   <article class="card">
-    <h3><a href="${detailUrl}">${escapeHtml(x.title || '')}</a></h3>
+    <h3><a href="${detailUrl}">${titleHL}</a></h3>
     <div class="meta">
       <span class="tag">${escapeHtml(x.infection_type || 'その他')}</span>
       <span class="tag">${escapeHtml(x.journal || '誌名不明')}</span>
@@ -117,15 +125,40 @@ function card(x) {
       ${pathogens}${topics}${tags}
       <span class="date">${dateStr}</span>
     </div>
-    ${sum ? `<p class="summary">${escapeHtml(sum)}</p>` : ''}
+    ${sum ? `<p class="summary summary-preline">${summaryHL}</p>` : ''}
     ${x.url ? `<div style="margin-top:8px"><a class="btn btn-primary" href="${escapeAttr(x.url)}" target="_blank" rel="noopener">▶ 元記事／再生へ</a></div>` : ''}
   </article>`;
 }
 
-/* util */
-function truncateForCard(s, n){ const str=String(s).trim(); return (str.length<=n)?str:str.slice(0,n-1)+'…'; }
+/* ハイライト・整形ユーティリティ */
 function escapeHtml(s){return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function escapeAttr(s){return String(s).replace(/"/g,'&quot;')}
 function uniq(arr){return [...new Set((arr||[]).filter(Boolean))]}
+
+function escapeRegExp(s){return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}
+function highlight(text, terms){
+  let html = escapeHtml(String(text||''));
+  for (const t of terms) {
+    if (!t) continue;
+    html = html.replace(new RegExp(escapeRegExp(t), 'gi'), m => `<mark>${m}</mark>`);
+  }
+  return html;
+}
+function highlightWithNewline(text, terms){
+  let html = escapeHtml(String(text||'')).replace(/\n/g,'<br>');
+  for (const t of terms) {
+    if (!t) continue;
+    html = html.replace(new RegExp(escapeRegExp(t), 'gi'), m => `<mark>${m}</mark>`);
+  }
+  return html;
+}
+function truncateLines(s, maxLines=3, maxChars=220){
+  const text = String(s || '').trim();
+  if (!text) return '';
+  const lines = text.split('\n');
+  let clipped = lines.slice(0, maxLines).join('\n');
+  if (clipped.length > maxChars) clipped = clipped.slice(0, maxChars-1) + '…';
+  return clipped;
+}
 
 load();
