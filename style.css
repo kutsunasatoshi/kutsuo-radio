@@ -212,7 +212,7 @@ mark {
 }
 /* ブランドロゴを大きめに調整 */
 .brand-logo {
-  height: 2.5em;   /* ← 今より大きく。さらに大きくしたいときは 3em や 3.5em に */
+  height: 3em;   /* ← 今より大きく。さらに大きくしたいときは 3em や 3.5em に */
   width: auto;
   margin-right: 10px;
   vertical-align: middle;
