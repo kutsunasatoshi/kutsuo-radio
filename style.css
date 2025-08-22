@@ -109,6 +109,32 @@ h1{margin:0 0 6px 0; font-size:24px; letter-spacing:.02em}
 .pill-blue  { background: var(--pill-blue-bg);  color: var(--pill-blue); }
 .pill-green { background: var(--pill-green-bg); color: var(--pill-green); }
 .pill-purple{ background: var(--pill-purple-bg);color: var(--pill-purple); }
+/* 詳細ページ */
+.detail-article{
+  background:var(--paper); border:1px solid var(--line);
+  border-radius:var(--radius); padding:18px; margin:18px 0; box-shadow:var(--shadow);
+}
+.detail-title{margin:0 0 10px; font-size:22px; line-height:1.4}
+.detail-meta{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px}
+.detail-pills{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 12px}
+.detail-summary{white-space:pre-wrap; line-height:1.7;}
+
+/* ボタン */
+.btn-primary{
+  border:1px solid var(--brand);
+  background: linear-gradient(180deg, rgba(77,163,255,.15), rgba(77,163,255,.05));
+  color:var(--text);
+}
+.btn-primary:hover{border-color:var(--accent)}
+
+/* 警告 */
+.warn{
+  background:#3f1d2a; color:#ffb4c0; border:1px solid #b91c1c;
+  padding:12px; border-radius:10px;
+}
+@media (prefers-color-scheme: light){
+  .warn{ background:#fff1f2; color:#b91c1c; }
+}
 
 .date{margin-left:auto; color:var(--muted); font-size:12px}
 
