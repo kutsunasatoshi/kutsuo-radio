@@ -189,3 +189,24 @@ mark {
 .mini-blue  { background:#e7f0ff; color:#1e5bb8; border:1px solid var(--line); }
 .mini-green { background:#e6f6ed; color:#1d7f3b; border:1px solid var(--line); }
 .mini-purple{ background:#efe8ff; color:#5a35b8; border:1px solid var(--line); }
+/* ロゴ付きブランドヘッダー */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand-logo {
+  /* タイトルのフォントサイズと同じくらいの高さ */
+  height: 1.2em;  /* 見出し文字サイズに追従 */
+  width: auto;
+  border-radius: 8px;      /* 角丸にしたくなければ削除 */
+  object-fit: cover;
+}
+.brand-text h1 {
+  margin: 0 0 6px 0;
+  font-size: 24px;         /* 既存の見出しサイズに合わせる */
+  line-height: 1.2;
+}
+@media (max-width: 480px){
+  .brand-logo { height: 1.1em; }
+}
