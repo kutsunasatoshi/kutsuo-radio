@@ -3,7 +3,7 @@
 #  - data/index.json …… 一覧・検索用（軽量）
 #  - data/ep/<slug>.json …… 各エピソード詳細（必要時のみ取得）
 #
-# 変更点：RSSの<link>を公開用URLへ正規化（creators → podcasters、anchor → podcasters）
+# ここでは RSS の <link> を一切加工せず、そのまま出力する（Creators の URL もそのまま）。
 
 import re, json, os, urllib.request, xml.etree.ElementTree as ET, hashlib
 from html import unescape
@@ -25,28 +25,6 @@ def truncate_multiline(text: str, max_lines=3, max_chars=220) -> str:
     lines = text.split("\n")
     clipped = "\n".join(lines[:max_lines])
     return (clipped[:max_chars-1] + "…") if len(clipped) > max_chars else clipped
-
-# ----------- creators / anchor のリンクを公開用に正規化 -----------
-def to_public_url(link: str) -> str:
-    """
-    RSSの<link>をリスナー向け公開URLへ変換する。
-    例) creators.spotify.com → podcasters.spotify.com/pod/show/<handle>/episodes/<slug>
-        anchor.fm → podcasters.spotify.com に寄せる
-    """
-    if not link: return ""
-    link = link.strip()
-
-    # 旧 Anchor ドメイン → podcasters（公開ページ）
-    if link.startswith("https://anchor.fm/"):
-        link = link.replace("https://anchor.fm/", "https://podcasters.spotify.com/")
-
-    # creators → podcasters（公開ページ）
-    m = re.match(r"https://creators\.spotify\.com/pod/profile/([^/]+)/episodes/([^/?#]+)", link)
-    if m:
-        handle, slug = m.groups()
-        return f"https://podcasters.spotify.com/pod/show/{handle}/episodes/{slug}"
-
-    return link
 
 # ------------------------ 掲載誌（略称） ------------------------
 JMAP = [
@@ -211,8 +189,7 @@ def main():
     index = []
     for it in items:
         title = norm(it.findtext("title") or "")
-        link  = norm(it.findtext("link")  or "")
-        link  = to_public_url(link)               # ★ 公開用URLへ正規化
+        link  = norm(it.findtext("link")  or "")  # ★ 加工しない（Creators でもそのまま）
         pub   = norm(it.findtext("pubDate") or "")
         guid  = norm(it.findtext("guid")    or "")
         summary = pick_summary(it)
@@ -224,7 +201,7 @@ def main():
             "id": _id,
             "slug": slug,
             "title": title,
-            "url": link,            # ← 公開用URL
+            "url": link,            # ★ RSS の link をそのまま使用
             "pubDate": pub,
             "journal": guess_journal(title),
             "pathogens": pick_many(title, INFECTION_PATHOGEN),
