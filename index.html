@@ -7,47 +7,69 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<header>
-  <h1>くつ王レディオ ポータル</h1>
-  <input id="q" type="search" placeholder="キーワード検索（タイトル内）">
+<header class="site-header">
+  <div class="container">
+    <h1>くつ王レディオ ポータル</h1>
+    <p class="subtitle">感染症×臨床研究のエピソードを、誌名・病原体・トピック・タグでサクッと横断検索</p>
+  </div>
 </header>
 
-<aside>
-  <div>
-    <label>感染症の種類</label>
-    <select id="f-infection"><option value="">すべて</option></select>
-  </div>
-  <div>
-    <label>掲載誌</label>
-    <select id="f-journal"><option value="">すべて</option></select>
-  </div>
-  <div>
-    <label>臨床研究の種類</label>
-    <select id="f-design"><option value="">すべて</option></select>
-  </div>
-  <div>
-    <label>並び替え</label>
-    <select id="sort">
-      <option value="new">新着順</option>
-      <option value="title">タイトル</option>
-      <option value="journal">掲載誌</option>
+<section class="toolbar container">
+  <div class="toolbar-row">
+    <input id="q" class="input" type="search" placeholder="タイトル内を検索…（例：CRE, ワクチン, SFTS）" />
+    <select id="sort" class="select">
+      <option value="new">並び替え：新着順</option>
+      <option value="title">並び替え：タイトル</option>
+      <option value="journal">並び替え：掲載誌</option>
     </select>
+    <button id="toggle-filters" class="btn" type="button">フィルタ</button>
+    <button id="reset" class="btn btn-ghost" type="button" title="すべての条件をクリア">リセット</button>
   </div>
-    <div>
-    <label>病原体（複合名含む）</label>
-    <select id="f-pathogen"><option value="">すべて</option></select>
-  </div>
-  <div>
-    <label>トピック</label>
-    <select id="f-topic"><option value="">すべて</option></select>
-  </div>
-  <div>
-    <label>タグ</label>
-    <select id="f-tag"><option value="">すべて</option></select>
-  </div>
-</aside>
 
-<main id="list"></main>
+  <details id="filters" class="filters">
+    <summary>フィルタを開く / 閉じる</summary>
+    <div class="filters-grid">
+      <label class="field">
+        <span>感染症の種類（代表）</span>
+        <select id="f-infection" class="select"><option value="">すべて</option></select>
+      </label>
+      <label class="field">
+        <span>掲載誌</span>
+        <select id="f-journal" class="select"><option value="">すべて</option></select>
+      </label>
+      <label class="field">
+        <span>臨床研究の種類</span>
+        <select id="f-design" class="select"><option value="">すべて</option></select>
+      </label>
+      <label class="field">
+        <span>病原体（複合名含む）</span>
+        <select id="f-pathogen" class="select"><option value="">すべて</option></select>
+      </label>
+      <label class="field">
+        <span>トピック</span>
+        <select id="f-topic" class="select"><option value="">すべて</option></select>
+      </label>
+      <label class="field">
+        <span>タグ</span>
+        <select id="f-tag" class="select"><option value="">すべて</option></select>
+      </label>
+    </div>
+  </details>
+
+  <div id="active-filters" class="active-filters" aria-live="polite"></div>
+  <div id="count" class="hit-count" aria-live="polite">0件ヒット</div>
+</section>
+
+<main class="container">
+  <section id="list" class="card-grid" aria-live="polite"></section>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <small>© くつ王レディオ</small>
+  </div>
+</footer>
+
 <script src="app.js"></script>
 </body>
 </html>
