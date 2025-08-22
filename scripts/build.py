@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-# 速いサイトのための二段構えビルド：
-# - data/index.json …… 一覧・検索用（軽量）
-# - data/ep/<slug>.json …… 各エピソード詳細（必要時のみ取得）
+# 高速2段構えビルド:
+#  - data/index.json …… 一覧・検索用（軽量）
+#  - data/ep/<slug>.json …… 各エピソード詳細（必要時のみ取得）
 #
-# ※ 外部API（Crossref / PubMed）は使わず、論文リンクは付与しない。
+# 変更点：RSSの<link>を公開用URLへ正規化（creators → podcasters など）
 
 import re, json, os, urllib.request, urllib.parse, xml.etree.ElementTree as ET, hashlib
 from html import unescape
@@ -12,11 +12,44 @@ FEED = "https://anchor.fm/s/10684950c/podcast/rss"
 OUT_INDEX = "data/index.json"
 OUT_DIR_EP = "data/ep"
 
+# ------------------------ ユーティリティ ------------------------
 def norm(s: str) -> str:
     s = (s or "").strip().replace("\u3000", " ")
     return re.sub(r"\s+", " ", s)
 
-# 掲載誌（略称）推定
+def slugify(s: str) -> str:
+    return hashlib.sha1((s or "").encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+def truncate_multiline(text: str, max_lines=3, max_chars=220) -> str:
+    if not text: return ""
+    lines = text.split("\n")
+    clipped = "\n".join(lines[:max_lines])
+    return (clipped[:max_chars-1] + "…") if len(clipped) > max_chars else clipped
+
+# ----------- creators / anchor のリンクを公開用に正規化 -----------
+def to_public_url(link: str) -> str:
+    """
+    RSSの<link>をリスナー向け公開URLへ変換する。
+    例) creators.spotify.com → podcasters.spotify.com/pod/show/<handle>/episodes/<slug>
+        anchor.fm → podcasters.spotify.com/pod/show/… に寄せる
+    """
+    if not link: return ""
+    link = link.strip()
+
+    # 旧Anchorドメインは podcasters (公開ページ) に寄せる
+    if link.startswith("https://anchor.fm/"):
+        link = link.replace("https://anchor.fm/", "https://podcasters.spotify.com/")
+
+    # クリエイター用URL → 公開用URL
+    # 例) https://creators.spotify.com/pod/profile/<handle>/episodes/<slug>
+    m = re.match(r"https://creators\.spotify\.com/pod/profile/([^/]+)/episodes/([^/?#]+)", link)
+    if m:
+        handle, slug = m.groups()
+        return f"https://podcasters.spotify.com/pod/show/{handle}/episodes/{slug}"
+
+    return link
+
+# ------------------------ 掲載誌（略称） ------------------------
 JMAP = [
     (r"\bNEJM\b|New England Journal", "NEJM"),
     (r"Lancet Infectious Diseases|Lancet ID", "Lancet ID"),
@@ -39,6 +72,7 @@ JMAP = [
     (r"\bMMWR\b", "MMWR"),
     (r"BMC Medicine", "BMC Medicine"),
 ]
+
 def guess_journal(title: str) -> str:
     for pat, name in JMAP:
         if re.search(pat, title or "", re.I): return name
@@ -48,7 +82,7 @@ def guess_journal(title: str) -> str:
             if re.search(pat, maybe or "", re.I): return name
     return ""
 
-# 分類辞書
+# ------------------------ 分類辞書 ------------------------
 INFECTION_PATHOGEN = {
     "COVID-19": r"COVID|SARS[- ]?CoV[- ]?2|コロナ",
     "インフルエンザ": r"インフル|Influenza|H5N1|HPAI",
@@ -133,26 +167,27 @@ FREE_TAGS = {
     "高齢者": r"高齢者|elderly|older adult|高齢|frail",
     "妊娠": r"pregnan|妊娠|妊婦",
 }
+
 def pick_many(text: str, patterns: dict) -> list:
     found = []
     for label, pat in patterns.items():
         if re.search(pat, text or "", re.I): found.append(label)
-    order = {k:i for i,k in enumerate(patterns.keys())}
+    order = {k: i for i, k in enumerate(patterns.keys())}
     return sorted(set(found), key=lambda x: order.get(x, 10**9))
 
-# 要旨（改行保持）
+# ------------------------ 要旨（改行保持） ------------------------
 def strip_html_preserve_newlines(s: str) -> str:
     if not s: return ""
     s = unescape(s)
-    s = re.sub(r'(?i)<br\s*/?>', '\n', s)
-    s = re.sub(r'(?i)</p\s*>', '\n\n', s)
-    s = re.sub(r'(?i)</li\s*>', '\n', s)
-    s = re.sub(r'(?i)</h[1-6]\s*>', '\n\n', s)
-    s = re.sub(r'<[^>]+>', ' ', s)
-    s = s.replace('\r\n','\n').replace('\r','\n')
-    s = re.sub(r'\n{3,}', '\n\n', s)
-    lines = [re.sub(r'[ \t]{2,}', ' ', ln.strip()) for ln in s.split('\n')]
-    return '\n'.join(lines).strip()
+    s = re.sub(r"(?i)<br\s*/?>", "\n", s)
+    s = re.sub(r"(?i)</p\s*>", "\n\n", s)
+    s = re.sub(r"(?i)</li\s*>", "\n", s)
+    s = re.sub(r"(?i)</h[1-6]\s*>", "\n\n", s)
+    s = re.sub(r"<[^>]+>", " ", s)
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    lines = [re.sub(r"[ \t]{2,}", " ", ln.strip()) for ln in s.split("\n")]
+    return "\n".join(lines).strip()
 
 def pick_summary(item: ET.Element) -> str:
     desc = item.findtext("description")
@@ -165,30 +200,24 @@ def pick_summary(item: ET.Element) -> str:
             return strip_html_preserve_newlines(tag.text or "")
     return ""
 
-def slugify(s: str) -> str:
-    return hashlib.sha1((s or "").encode('utf-8', errors='ignore')).hexdigest()[:16]
-
-def truncate_multiline(text: str, max_lines=3, max_chars=220) -> str:
-    if not text: return ""
-    lines = text.split('\n')
-    clipped = '\n'.join(lines[:max_lines])
-    return (clipped[:max_chars-1] + '…') if len(clipped) > max_chars else clipped
-
+# ------------------------ ビルド本体 ------------------------
 def main():
     xml = urllib.request.urlopen(FEED, timeout=30).read().decode("utf-8", errors="ignore")
     root = ET.fromstring(xml)
-    items = root.find('channel').findall('item')
+    items = root.find("channel").findall("item")
 
     os.makedirs("data", exist_ok=True)
     os.makedirs(OUT_DIR_EP, exist_ok=True)
 
     index = []
     for it in items:
-        title = norm(it.findtext('title') or "")
-        link  = norm(it.findtext('link') or "")
-        pub   = norm(it.findtext('pubDate') or "")
-        guid  = norm(it.findtext('guid') or "")
+        title = norm(it.findtext("title") or "")
+        link  = norm(it.findtext("link")  or "")
+        link  = to_public_url(link)               # ★ 公開用URLへ正規化
+        pub   = norm(it.findtext("pubDate") or "")
+        guid  = norm(it.findtext("guid")    or "")
         summary = pick_summary(it)
+
         _id = guid or link or title
         slug = slugify(_id)
 
@@ -196,7 +225,7 @@ def main():
             "id": _id,
             "slug": slug,
             "title": title,
-            "url": link,
+            "url": link,            # ← 公開用URL
             "pubDate": pub,
             "journal": guess_journal(title),
             "pathogens": pick_many(title, INFECTION_PATHOGEN),
@@ -218,17 +247,16 @@ def main():
         # 詳細JSON（各1件）
         detail = dict(base)
         detail["summary"] = summary
-        # ※ ここに paper_url / pubmed_url は付けない
-
         with open(os.path.join(OUT_DIR_EP, f"{slug}.json"), "w", encoding="utf-8") as f:
             json.dump(detail, f, ensure_ascii=False, indent=2)
 
-        # 軽量 index.json 行
+        # 軽量 index.json 行（要旨短縮）
         row = dict(base)
         row["summary_short"] = truncate_multiline(summary, 3, 220)
         index.append(row)
 
-    index.sort(key=lambda x: x.get("pubDate",""), reverse=True)
+    # 新着順
+    index.sort(key=lambda x: x.get("pubDate", ""), reverse=True)
     with open(OUT_INDEX, "w", encoding="utf-8") as f:
         json.dump(index, f, ensure_ascii=False, indent=2)
 
