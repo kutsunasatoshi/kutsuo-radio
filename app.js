@@ -1,7 +1,8 @@
-// app.js（軽量 index.json 版 + デバウンス + 感染症統合フィルタ）
-// - 一覧は data/index.json を使用（高速）
+// app.js（統合フィルタ + デバウンス + 病原体ピル非表示）
+// - 一覧は data/index.json（軽量）
 // - 詳細は details.html?slug=... で ep/<slug>.json を1件取得
-// - 感染症の種類（infection_type）と病原体（pathogens）を統合した infection_all でフィルタ
+// - 感染症の種類は infection_all を使用（病原体も統合済み）
+// - 外部リンク（再生ボタン）は x.url をそのまま使用（Creatorsでも可）
 
 let items = [];
 const $  = (s) => document.querySelector(s);
@@ -29,30 +30,32 @@ function wireUI(){
   });
   $('#reset')?.addEventListener('click', resetAll);
 
+  // ショートカット：/ で検索にフォーカス、Esc で解除
   window.addEventListener('keydown', (e)=>{
     if(e.key==='/' && document.activeElement.tagName!=='INPUT'){ e.preventDefault(); $('#q')?.focus(); }
     if(e.key==='Escape'){ document.activeElement.blur(); }
   });
 }
 
-/* ============================== フィルタ初期化（デバウンス対応） ============================== */
+/* ============================== フィルタ初期化（デバウンス入り） ============================== */
 function initFilters(data) {
-  // 統合：infection_all からユニーク抽出（存在しない場合の保険を含む）
+  // 統合：infection_all からユニーク抽出（保険として古い構造にも対応）
   const allInfections = uniq(
-    data.flatMap(d => (d.infection_all && d.infection_all.length) ? d.infection_all
-                      : [d.infection_type, ...(d.pathogens||[])])
+    data.flatMap(d => (d.infection_all && d.infection_all.length)
+        ? d.infection_all : [d.infection_type, ...(d.pathogens||[])])
       .filter(Boolean)
   );
   fillSelect('#f-infection', allInfections);
-
   fillSelect('#f-journal',   uniq(data.map(d => d.journal).filter(Boolean)));
   fillSelect('#f-design',    uniq(data.map(d => d.study_design)));
-  // もはや個別の病原体プルダウンは使わないので fillSelect('#f-pathogen', …) は削除
+  fillSelect('#f-topic',     uniq(data.flatMap(d => d.topics||[])));
+  fillSelect('#f-tag',       uniq(data.flatMap(d => d.tags||[])));
 
+  // デバウンス（150ms）
   const debounce = (fn, ms = 150) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
   const handler = debounce(render, 150);
 
-  ['#q','#f-infection','#f-journal','#f-design','#f-tag','#f-topic','#sort'].forEach(sel=>{
+  ['#q','#f-infection','#f-journal','#f-design','#f-topic','#f-tag','#sort'].forEach(sel=>{
     const el = $(sel); if (!el) return;
     el.addEventListener('input', handler);
     el.addEventListener('change', handler);
@@ -77,7 +80,6 @@ function getState(){
     fi: $('#f-infection')?.value || '',
     fj: $('#f-journal')?.value   || '',
     fd: $('#f-design')?.value    || '',
-    // 旧 f-pathogen は廃止
     ft: $('#f-topic')?.value     || '',
     fg: $('#f-tag')?.value       || '',
     sort: $('#sort')?.value      || 'new',
@@ -159,6 +161,7 @@ function render() {
   else if (s.sort === 'journal') list.sort((a, b) => (a.journal || '').localeCompare(b.journal || '', 'ja'));
   else                          list.sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0));
 
+  // 共有用URL同期（不要ならコメントアウト可）
   const qs = new URLSearchParams(s).toString();
   history.replaceState(null, "", "?" + qs);
 
@@ -169,6 +172,7 @@ function render() {
     ? list.map(row => card(row, terms, s)).join('')
     : '<p>該当なし（クエリやフィルタ条件をご確認ください）</p>';
 
+  // 先読み（ホバーで詳細JSONをキャッシュ）
   document.querySelectorAll('.card a[href*="details.html"]').forEach(a=>{
     a.addEventListener('mouseenter', ()=>{
       const m = a.href.match(/slug=([^&]+)/); if(!m) return;
@@ -180,8 +184,8 @@ function render() {
 }
 
 function includesInfection(x, val){
-  const arr = (x.infection_all && x.infection_all.length) ? x.infection_all
-            : [x.infection_type, ...(x.pathogens||[])];
+  const arr = (x.infection_all && x.infection_all.length)
+              ? x.infection_all : [x.infection_type, ...(x.pathogens||[])];
   return (arr || []).includes(val);
 }
 
@@ -196,9 +200,10 @@ function resetAll(){
 function card(x, terms, state) {
   const d = x.pubDate ? new Date(x.pubDate) : null;
   const dateStr = d ? d.toLocaleDateString('ja-JP') : '';
-  const pathogens = (x.pathogens || []).map(p => `<span class="pill pill-blue">${escapeHtml(p)}</span>`).join('');
-  const topics    = (x.topics    || []).map(t => `<span class="pill pill-green">${escapeHtml(t)}</span>`).join('');
-  const tags      = (x.tags      || []).map(t => `<span class="pill pill-purple">#${escapeHtml(t)}</span>`).join('');
+
+  // ★病原体ピルは非表示：pathogensは作らない
+  const topics = (x.topics || []).map(t => `<span class="pill pill-green">${escapeHtml(t)}</span>`).join('');
+  const tags   = (x.tags   || []).map(t => `<span class="pill pill-purple">#${escapeHtml(t)}</span>`).join('');
 
   const qs = new URLSearchParams({
     slug: String(x.slug),
@@ -211,7 +216,7 @@ function card(x, terms, state) {
   const titleHL   = highlight(x.title || '', terms);
   const summaryHL = highlightWithNewline(sum, terms);
 
-  const playUrl = x.url || '';
+  const playUrl = x.url || ''; // CreatorsでもOK
 
   return `
   <article class="card">
@@ -220,7 +225,7 @@ function card(x, terms, state) {
       <span class="tag">${escapeHtml(x.infection_type || 'その他')}</span>
       <span class="tag">${escapeHtml(x.journal || '誌名不明')}</span>
       <span class="tag">${escapeHtml(x.study_design || '不明')}</span>
-      ${pathogens}${topics}${tags}
+      ${topics}${tags}
       <span class="date">${dateStr}</span>
     </div>
     ${sum ? `<p class="summary summary-preline">${summaryHL}</p>` : ''}
