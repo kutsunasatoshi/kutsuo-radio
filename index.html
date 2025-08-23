@@ -18,11 +18,10 @@
 <!-- ====== ヘッダー（ロゴ＋タイトル） ====== -->
 <header class="site-header">
   <div class="container brand">
-    <!-- ロゴはリンクにしない -->
-    <img src="assets/logo.png" alt="くつ王レディオ ロゴ" class="brand-logo">
-
-    <!-- タイトルだけ HOME へのリンク -->
+    <!-- ロゴはリンクにしない（左に小さく固定） -->
+    <img src="assets/logo.png" alt="くつ王レディオ ロゴ" class="brand-logo" />
     <div class="brand-text">
+      <!-- タイトルをクリックでHOME -->
       <h1><a href="./" style="color:inherit; text-decoration:none;">くつ王レディオ ポータル</a></h1>
       <p class="subtitle">複雑に入り組んだ感染症領域に鋭いメスを入れ様々な謎や疑問を徹底的に究明するポッドキャストであるくつ王レディオのポータルサイトです</p>
     </div>
@@ -40,6 +39,8 @@
     </select>
     <button id="toggle-filters" class="btn" type="button">フィルタ</button>
     <button id="reset" class="btn btn-ghost" type="button" title="すべての条件をクリア">リセット</button>
+    <!-- 共有ボタンは必ずツールバー内に置く -->
+    <button id="share" class="btn btn-ghost" type="button">🔗 共有</button>
   </div>
 
   <!-- 折りたたみフィルタ -->
@@ -88,13 +89,7 @@
   </div>
 </footer>
 
-    <button id="reset" class="btn btn-ghost" type="button" title="すべての条件をクリア">リセット</button>
-    <button id="share" class="btn btn-ghost" type="button">🔗 共有</button>
-  </div>
-
-  
-<!-- アプリ本体 -->
+<!-- アプリ本体（app.js は末尾で読み込む） -->
 <script src="app.js"></script>
 </body>
 </html>
-
