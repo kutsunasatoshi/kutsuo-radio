@@ -50,7 +50,22 @@ JMAP = [
     (r"Nature Communications", "Nat Commun"),
     (r"\bBMJ\b", "BMJ"),
     (r"\bMMWR\b", "MMWR"),
-    (r"BMC Medicine", "BMC Medicine"),
+    (r"BMC Medicine", "BMC Medicine")
+    # === 新規追加 ===
+    (r"Journal of Epidemiology", "J Epidemiol"),
+    (r"Antimicrobial Stewardship\s*&\s*Healthcare Epidemiology|ASHE", "ASHE"),
+    (r"Journal of the American Geriatrics Society|J Am Geriatr Soc", "J Am Geriatr Soc"),
+    (r"Annals of Internal Medicine|Ann Intern Med", "Ann Intern Med"),
+    (r"eClinicalMedicine", "eClinicalMed"),
+    (r"China CDC Weekly", "China CDC Wkly"),
+    (r"PLOS Neglected Tropical Diseases|PLoS Negl Trop Dis|PLoS NTDs?", "PLoS NTD"),
+    (r"Journal of Clinical Microbiology|JCM\b", "J Clin Microbiol"),
+    (r"Clinical Transplantation", "Clin Transplant"),
+    (r"American Journal of Infection Control|AJIC\b", "AJIC"),
+    (r"Heliyon", "Heliyon"),
+    (r"\bNature\b(?! Reviews| Communications)", "Nature"),  # ReviewsやCommunicationsに先にマッチさせてあるので最後に
+    (r"NPJ Vaccines", "NPJ Vaccines"),
+    (r"Microorganisms", "Microorganisms"),
 ]
 
 def guess_journal_from_map(title: str) -> str:
