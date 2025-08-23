@@ -235,3 +235,10 @@ function highlightWithNewline(text, terms){
 }
 
 load();
+
+$('#share')?.addEventListener('click', async ()=>{
+  const qs = new URLSearchParams(getState()).toString();
+  history.replaceState(null, "", "?" + qs);         // URLを状態に同期
+  await navigator.clipboard.writeText(location.href);
+  alert('この検索条件のURLをコピーしました');
+});
