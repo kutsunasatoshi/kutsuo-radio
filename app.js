@@ -1,4 +1,4 @@
-// app.js（軽量 index.json 版）
+// app.js（軽量 index.json 版 + デバウンス）
 // - 一覧は data/index.json を使用（高速）
 // - 詳細は details.html?slug=... で ep/<slug>.json を1件取得
 // - 外部リンク（再生ボタン）は x.url をそのまま使用（Creators のまま）
@@ -6,6 +6,7 @@
 let items = [];
 const $  = (s) => document.querySelector(s);
 
+/* ============================== 起動 ============================== */
 async function load() {
   try {
     const res = await fetch('data/index.json?t=' + Date.now(), { cache: 'no-store' });
@@ -21,36 +22,12 @@ async function load() {
   }
 }
 
+/* ============================== UI配線 ============================== */
 function wireUI(){
   $('#toggle-filters')?.addEventListener('click', ()=>{
     const d = $('#filters'); if(!d) return; d.open = !d.open;
   });
   $('#reset')?.addEventListener('click', resetAll);
-
-  // 共有ボタン（存在すれば使用可能）
-  $('#share')?.addEventListener('click', async ()=>{
-    try{
-      await navigator.clipboard.writeText(location.href);
-      alert('現在の検索条件のURLをコピーした。');
-    }catch(e){ alert('コピーに失敗した。'); }
-  });
-}
-
-function initFilters(data) {
-  fillSelect('#f-infection', uniq(data.map(d => d.infection_type)));
-  fillSelect('#f-journal',   uniq(data.map(d => d.journal).filter(Boolean)));
-  fillSelect('#f-design',    uniq(data.map(d => d.study_design)));
-  fillSelect('#f-pathogen',  uniq(data.flatMap(d => d.pathogens || [])));
-  fillSelect('#f-topic',     uniq(data.flatMap(d => d.topics    || [])));
-  fillSelect('#f-tag',       uniq(data.flatMap(d => d.tags      || [])));
-
-  // 入力デバウンス
-  const onInputDebounced = (fn, ms=150) => {
-    let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); };
-  };
-  ['#q','#f-infection','#f-journal','#f-design',
-   '#f-pathogen','#f-topic','#f-tag','#sort'
-  ].forEach(id => $(id)?.addEventListener('input', onInputDebounced(render, 150)));
 
   // ショートカット：/ で検索にフォーカス、Esc で解除
   window.addEventListener('keydown', (e)=>{
@@ -59,6 +36,46 @@ function initFilters(data) {
   });
 }
 
+/* ============================== フィルタ初期化（デバウンス対応） ============================== */
+function initFilters(data) {
+  // セレクトの中身を初期化
+  fillSelect('#f-infection', uniq(data.map(d => d.infection_type)));
+  fillSelect('#f-journal',   uniq(data.map(d => d.journal).filter(Boolean)));
+  fillSelect('#f-design',    uniq(data.map(d => d.study_design)));
+  fillSelect('#f-pathogen',  uniq(data.flatMap(d => d.pathogens || [])));
+  fillSelect('#f-topic',     uniq(data.flatMap(d => d.topics    || [])));
+  fillSelect('#f-tag',       uniq(data.flatMap(d => d.tags      || [])));
+
+  // デバウンス関数（入力から一定時間経過後に render を実行）
+  const debounce = (fn, ms = 150) => {
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  };
+  const handler = debounce(render, 150);
+
+  // 入力系（テキスト/セレクト）にまとめて登録
+  const ids = [
+    '#q',
+    '#f-infection',
+    '#f-journal',
+    '#f-design',
+    '#f-pathogen',
+    '#f-topic',
+    '#f-tag',
+    '#sort'
+  ];
+  ids.forEach(sel => {
+    const el = $(sel);
+    if (!el) return;
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  });
+}
+
+/* ============================== 共通UIヘルパ ============================== */
 function fillSelect(sel, values) {
   const el = $(sel); if (!el) return;
   const sorted = [...values].sort((a,b)=>String(a).localeCompare(String(b),'ja'));
@@ -82,11 +99,12 @@ function getState(){
   };
 }
 
-/* -------- 強化検索（AND/OR/"..."/-除外） -------- */
+/* ============================== 強化検索（AND/OR/"..."/-除外） ============================== */
 function parseQuery(qRaw){
   const q = (qRaw || '').trim();
   if (!q) return { includeGroups: [], exclude: [], highlight: [] };
-  const phrases = []; let rest = q.replace(/"([^"]+)"/g, (_, p) => { phrases.push(p.trim()); return ' '; });
+  const phrases = [];
+  let rest = q.replace(/"([^"]+)"/g, (_, p) => { phrases.push(p.trim()); return ' '; });
   const tokens = rest.split(/\s+/).filter(Boolean);
   const includeGroups = []; const exclude = [];
   for (const ph of phrases) includeGroups.push([ph]);
@@ -98,6 +116,7 @@ function parseQuery(qRaw){
   const highlight = [...phrases, ...includeGroups.flatMap(g=>g)].filter(Boolean);
   return { includeGroups, exclude, highlight };
 }
+
 function recordText(x){
   const parts = [
     x.title || '',
@@ -111,11 +130,13 @@ function recordText(x){
   ];
   return parts.join('\n').toLowerCase();
 }
+
 function buildPredicate(qRaw){
   const { includeGroups, exclude } = parseQuery(qRaw);
   if (includeGroups.length===0 && exclude.length===0) return ()=>true;
   return (x) => {
     const text = recordText(x);
+    // AND 各群（群内は OR）
     for (const orGroup of includeGroups){
       let ok=false;
       for (const term of orGroup){
@@ -123,19 +144,21 @@ function buildPredicate(qRaw){
       }
       if (!ok) return false;
     }
+    // 除外
     for (const ex of exclude){
       if (ex && text.includes(ex.toLowerCase())) return false;
     }
     return true;
   };
 }
+
 function getHighlightTerms(state){
   const parsed = parseQuery(state.q);
   const extra = [state.fi,state.fj,state.fd,state.fp,state.ft,state.fg].filter(Boolean);
   return [...new Set([...parsed.highlight, ...extra])].sort((a,b)=>b.length-a.length);
 }
-/* ---------------------------------------------- */
 
+/* ============================== 描画 ============================== */
 function render() {
   const s = getState();
   const predicate = buildPredicate(s.q);
@@ -154,7 +177,7 @@ function render() {
   else if (s.sort === 'journal') list.sort((a, b) => (a.journal || '').localeCompare(b.journal || '', 'ja'));
   else                          list.sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0));
 
-  // URL同期（共有しやすく）
+  // URL同期（共有したいときのために残す。不要なら削除可）
   const qs = new URLSearchParams(s).toString();
   history.replaceState(null, "", "?" + qs);
 
@@ -176,6 +199,7 @@ function render() {
   });
 }
 
+/* ============================== その他 ============================== */
 function resetAll(){
   ['#q','#f-infection','#f-journal','#f-design','#f-pathogen','#f-topic','#f-tag']
     .forEach(id => { const el = $(id); if (el) el.value = ''; });
@@ -202,7 +226,7 @@ function card(x, terms, state) {
   const titleHL   = highlight(x.title || '', terms);
   const summaryHL = highlightWithNewline(sum, terms);
 
-  // ★ Creators の URL をそのまま使用
+  // Creators の URL をそのまま使用
   const playUrl = x.url || '';
 
   return `
@@ -220,7 +244,7 @@ function card(x, terms, state) {
   </article>`;
 }
 
-/* util */
+/* ============================== ユーティリティ ============================== */
 function escapeHtml(s){return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function escapeAttr(s){return String(s).replace(/"/g,'&quot;')}
 function uniq(arr){return [...new Set((arr||[]).filter(Boolean))]}
@@ -234,11 +258,5 @@ function highlightWithNewline(text, terms){
   return html;
 }
 
+/* ============================== 実行 ============================== */
 load();
-
-$('#share')?.addEventListener('click', async ()=>{
-  const qs = new URLSearchParams(getState()).toString();
-  history.replaceState(null, "", "?" + qs);         // URLを状態に同期
-  await navigator.clipboard.writeText(location.href);
-  alert('この検索条件のURLをコピーしました');
-});
