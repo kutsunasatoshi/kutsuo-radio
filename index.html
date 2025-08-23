@@ -39,37 +39,48 @@
     </select>
     <button id="toggle-filters" class="btn" type="button">フィルタ</button>
     <button id="reset" class="btn btn-ghost" type="button" title="すべての条件をクリア">リセット</button>
-    <!-- 共有ボタンは必ずツールバー内に置く -->
-    <button id="share" class="btn btn-ghost" type="button">🔗 共有</button>
   </div>
 
   <!-- 折りたたみフィルタ -->
   <details id="filters" class="filters">
     <summary>フィルタを開く / 閉じる</summary>
     <div class="filters-grid">
+      <!-- 統合：感染症の種類（病原体も含む重複なしの集合） -->
       <label class="field">
-        <span>感染症の種類（代表）</span>
-        <select id="f-infection" class="select"><option value="">すべて</option></select>
+        <span>感染症の種類</span>
+        <select id="f-infection" class="select">
+          <option value="">すべて</option>
+        </select>
       </label>
+
       <label class="field">
         <span>掲載誌</span>
-        <select id="f-journal" class="select"><option value="">すべて</option></select>
+        <select id="f-journal" class="select">
+          <option value="">すべて</option>
+        </select>
       </label>
+
       <label class="field">
         <span>臨床研究の種類</span>
-        <select id="f-design" class="select"><option value="">すべて</option></select>
+        <select id="f-design" class="select">
+          <option value="">すべて</option>
+        </select>
       </label>
-      <label class="field">
-        <span>病原体（複合名含む）</span>
-        <select id="f-pathogen" class="select"><option value="">すべて</option></select>
-      </label>
+
+      <!-- 病原体セレクトは削除（統合済みのため） -->
+
       <label class="field">
         <span>トピック</span>
-        <select id="f-topic" class="select"><option value="">すべて</option></select>
+        <select id="f-topic" class="select">
+          <option value="">すべて</option>
+        </select>
       </label>
+
       <label class="field">
         <span>タグ</span>
-        <select id="f-tag" class="select"><option value="">すべて</option></select>
+        <select id="f-tag" class="select">
+          <option value="">すべて</option>
+        </select>
       </label>
     </div>
   </details>
@@ -89,7 +100,7 @@
   </div>
 </footer>
 
-<!-- アプリ本体（app.js は末尾で読み込む） -->
+<!-- アプリ本体 -->
 <script src="app.js"></script>
 </body>
 </html>
