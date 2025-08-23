@@ -1,7 +1,7 @@
-// app.js（軽量 index.json 版 + デバウンス）
+// app.js（軽量 index.json 版 + デバウンス + 感染症統合フィルタ）
 // - 一覧は data/index.json を使用（高速）
 // - 詳細は details.html?slug=... で ep/<slug>.json を1件取得
-// - 外部リンク（再生ボタン）は x.url をそのまま使用（Creators のまま）
+// - 感染症の種類（infection_type）と病原体（pathogens）を統合した infection_all でフィルタ
 
 let items = [];
 const $  = (s) => document.querySelector(s);
@@ -29,7 +29,6 @@ function wireUI(){
   });
   $('#reset')?.addEventListener('click', resetAll);
 
-  // ショートカット：/ で検索にフォーカス、Esc で解除
   window.addEventListener('keydown', (e)=>{
     if(e.key==='/' && document.activeElement.tagName!=='INPUT'){ e.preventDefault(); $('#q')?.focus(); }
     if(e.key==='Escape'){ document.activeElement.blur(); }
@@ -38,38 +37,23 @@ function wireUI(){
 
 /* ============================== フィルタ初期化（デバウンス対応） ============================== */
 function initFilters(data) {
-  // セレクトの中身を初期化
-  fillSelect('#f-infection', uniq(data.map(d => d.infection_type)));
+  // 統合：infection_all からユニーク抽出（存在しない場合の保険を含む）
+  const allInfections = uniq(
+    data.flatMap(d => (d.infection_all && d.infection_all.length) ? d.infection_all
+                      : [d.infection_type, ...(d.pathogens||[])])
+      .filter(Boolean)
+  );
+  fillSelect('#f-infection', allInfections);
+
   fillSelect('#f-journal',   uniq(data.map(d => d.journal).filter(Boolean)));
   fillSelect('#f-design',    uniq(data.map(d => d.study_design)));
-  fillSelect('#f-pathogen',  uniq(data.flatMap(d => d.pathogens || [])));
-  fillSelect('#f-topic',     uniq(data.flatMap(d => d.topics    || [])));
-  fillSelect('#f-tag',       uniq(data.flatMap(d => d.tags      || [])));
+  // もはや個別の病原体プルダウンは使わないので fillSelect('#f-pathogen', …) は削除
 
-  // デバウンス関数（入力から一定時間経過後に render を実行）
-  const debounce = (fn, ms = 150) => {
-    let t;
-    return (...args) => {
-      clearTimeout(t);
-      t = setTimeout(() => fn(...args), ms);
-    };
-  };
+  const debounce = (fn, ms = 150) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
   const handler = debounce(render, 150);
 
-  // 入力系（テキスト/セレクト）にまとめて登録
-  const ids = [
-    '#q',
-    '#f-infection',
-    '#f-journal',
-    '#f-design',
-    '#f-pathogen',
-    '#f-topic',
-    '#f-tag',
-    '#sort'
-  ];
-  ids.forEach(sel => {
-    const el = $(sel);
-    if (!el) return;
+  ['#q','#f-infection','#f-journal','#f-design','#f-tag','#f-topic','#sort'].forEach(sel=>{
+    const el = $(sel); if (!el) return;
     el.addEventListener('input', handler);
     el.addEventListener('change', handler);
   });
@@ -78,6 +62,7 @@ function initFilters(data) {
 /* ============================== 共通UIヘルパ ============================== */
 function fillSelect(sel, values) {
   const el = $(sel); if (!el) return;
+  el.innerHTML = '<option value="">すべて</option>';
   const sorted = [...values].sort((a,b)=>String(a).localeCompare(String(b),'ja'));
   for (const v of sorted) {
     const o = document.createElement('option');
@@ -92,7 +77,7 @@ function getState(){
     fi: $('#f-infection')?.value || '',
     fj: $('#f-journal')?.value   || '',
     fd: $('#f-design')?.value    || '',
-    fp: $('#f-pathogen')?.value  || '',
+    // 旧 f-pathogen は廃止
     ft: $('#f-topic')?.value     || '',
     fg: $('#f-tag')?.value       || '',
     sort: $('#sort')?.value      || 'new',
@@ -123,8 +108,8 @@ function recordText(x){
     x.summary_short || '',
     x.journal || '',
     x.infection_type || '',
+    ...(x.infection_all || []),
     x.study_design || '',
-    ...(x.pathogens || []),
     ...(x.topics || []),
     ...(x.tags || [])
   ];
@@ -136,7 +121,6 @@ function buildPredicate(qRaw){
   if (includeGroups.length===0 && exclude.length===0) return ()=>true;
   return (x) => {
     const text = recordText(x);
-    // AND 各群（群内は OR）
     for (const orGroup of includeGroups){
       let ok=false;
       for (const term of orGroup){
@@ -144,7 +128,6 @@ function buildPredicate(qRaw){
       }
       if (!ok) return false;
     }
-    // 除外
     for (const ex of exclude){
       if (ex && text.includes(ex.toLowerCase())) return false;
     }
@@ -154,7 +137,7 @@ function buildPredicate(qRaw){
 
 function getHighlightTerms(state){
   const parsed = parseQuery(state.q);
-  const extra = [state.fi,state.fj,state.fd,state.fp,state.ft,state.fg].filter(Boolean);
+  const extra = [state.fi,state.fj,state.fd,state.ft,state.fg].filter(Boolean);
   return [...new Set([...parsed.highlight, ...extra])].sort((a,b)=>b.length-a.length);
 }
 
@@ -165,19 +148,17 @@ function render() {
 
   let list = items.filter(x =>
     predicate(x) &&
-    (!s.fi || (x.infection_type || '') === s.fi) &&
+    (!s.fi || includesInfection(x, s.fi)) &&
     (!s.fj || (x.journal || '') === s.fj) &&
     (!s.fd || (x.study_design || '') === s.fd) &&
-    (!s.fp || (x.pathogens || []).includes(s.fp)) &&
-    (!s.ft || (x.topics    || []).includes(s.ft)) &&
-    (!s.fg || (x.tags      || []).includes(s.fg))
+    (!s.ft || (x.topics || []).includes(s.ft)) &&
+    (!s.fg || (x.tags   || []).includes(s.fg))
   );
 
   if (s.sort === 'title')      list.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ja'));
   else if (s.sort === 'journal') list.sort((a, b) => (a.journal || '').localeCompare(b.journal || '', 'ja'));
   else                          list.sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0));
 
-  // URL同期（共有したいときのために残す。不要なら削除可）
   const qs = new URLSearchParams(s).toString();
   history.replaceState(null, "", "?" + qs);
 
@@ -188,7 +169,6 @@ function render() {
     ? list.map(row => card(row, terms, s)).join('')
     : '<p>該当なし（クエリやフィルタ条件をご確認ください）</p>';
 
-  // 先読み（ホバーで詳細JSONをキャッシュ）
   document.querySelectorAll('.card a[href*="details.html"]').forEach(a=>{
     a.addEventListener('mouseenter', ()=>{
       const m = a.href.match(/slug=([^&]+)/); if(!m) return;
@@ -199,9 +179,15 @@ function render() {
   });
 }
 
+function includesInfection(x, val){
+  const arr = (x.infection_all && x.infection_all.length) ? x.infection_all
+            : [x.infection_type, ...(x.pathogens||[])];
+  return (arr || []).includes(val);
+}
+
 /* ============================== その他 ============================== */
 function resetAll(){
-  ['#q','#f-infection','#f-journal','#f-design','#f-pathogen','#f-topic','#f-tag']
+  ['#q','#f-infection','#f-journal','#f-design','#f-topic','#f-tag']
     .forEach(id => { const el = $(id); if (el) el.value = ''; });
   $('#sort').value = 'new';
   render();
@@ -214,11 +200,10 @@ function card(x, terms, state) {
   const topics    = (x.topics    || []).map(t => `<span class="pill pill-green">${escapeHtml(t)}</span>`).join('');
   const tags      = (x.tags      || []).map(t => `<span class="pill pill-purple">#${escapeHtml(t)}</span>`).join('');
 
-  // 詳細ページは slug 指定で1件JSONのみ取得
   const qs = new URLSearchParams({
     slug: String(x.slug),
     q: state.q || '', fi: state.fi || '', fj: state.fj || '', fd: state.fd || '',
-    fp: state.fp || '', ft: state.ft || '', fg: state.fg || ''
+    ft: state.ft || '', fg: state.fg || ''
   }).toString();
   const detailUrl = `details.html?${qs}`;
 
@@ -226,7 +211,6 @@ function card(x, terms, state) {
   const titleHL   = highlight(x.title || '', terms);
   const summaryHL = highlightWithNewline(sum, terms);
 
-  // Creators の URL をそのまま使用
   const playUrl = x.url || '';
 
   return `
