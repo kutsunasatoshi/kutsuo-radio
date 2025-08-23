@@ -3,7 +3,10 @@
 #  - data/index.json …… 一覧・検索用（軽量）
 #  - data/ep/<slug>.json …… 各エピソード詳細（必要時のみ取得）
 #
-# ここでは RSS の <link> を一切加工せず、そのまま出力する（Creators の URL もそのまま）。
+# 変更点：
+#  - 感染症の種類 と 病原体 を統合した配列フィールド `infection_all` を出力
+#  - タイトルにより誌名を特例上書き（IDWR / IASR）
+#  - タイトルに「流行情報」が含まれる場合は study_design="サーベイランス"、topics に「疫学」を追加
 
 import re, json, os, urllib.request, xml.etree.ElementTree as ET, hashlib
 from html import unescape
@@ -50,7 +53,7 @@ JMAP = [
     (r"BMC Medicine", "BMC Medicine"),
 ]
 
-def guess_journal(title: str) -> str:
+def guess_journal_from_map(title: str) -> str:
     for pat, name in JMAP:
         if re.search(pat, title or "", re.I): return name
     if "　" in (title or ""):
@@ -114,6 +117,7 @@ INFECTION_PATHOGEN = {
     "皮膚軟部組織感染症": r"皮膚|軟部|SSTI|cellulitis|膿瘍",
     "関節炎": r"関節炎|arthritis|化膿性関節炎",
 }
+
 TOPICS = {
     "ワクチン": r"ワクチン|vaccine|immuni[sz]ation",
     "抗菌薬": r"抗菌薬|antibiotic|β-?lactam|penem|cef|macrolide|doxy|fosfomycin|aminoglycoside",
@@ -125,30 +129,12 @@ TOPICS = {
     "抗原虫薬": r"antiprotozoal|抗原虫|chloroquine|artemisinin|tafenoquine",
     "病原体": r"(?:病原体|pathogen|bacteri|virus|fungi)"
 }
-FREE_TAGS = {
-    "熱帯医学": r"マラリア|デング|チクングニア|ジカ|熱帯|tropical",
-    "節足動物媒介感染症": r"蚊|ダニ|ベクター|vector[- ]borne|媒介",
-    "One Health": r"One Health|動物|家畜|環境微生物",
-    "免疫不全": r"免疫不全|immunocompromised|免疫低下",
-    "移植": r"移植|transplant|移植後",
-    "性感染症": r"性感|性行為感染|sexually transmitted|STI",
-    "耐性菌": r"耐性|AMR|resistan|CRE|VRE|MRSA|ESBL|CPE",
-    "小児": r"小児|小児科|pediatric|children",
-    "周産期": r"妊娠|妊婦|周産期|neonat|perinatal|pregnan",
-    "外科感染症": r"手術|術後|外科|SSI",
-    "人工物感染症": r"カテ|人工|デバイス|プロテーゼ|留置|device|prosthe",
-    "アウトブレイク": r"outbreak|アウトブレイク",
-    "サーベイランス": r"surveillance|サーベイランス",
-    "院内感染": r"healthcare[- ]associated|hospital[- ]acquired|院内感染|医療関連感染",
-    "重症": r"severe|重症|ICU|集中治療",
-    "高齢者": r"高齢者|elderly|older adult|高齢|frail",
-    "妊娠": r"pregnan|妊娠|妊婦",
-}
 
 def pick_many(text: str, patterns: dict) -> list:
     found = []
     for label, pat in patterns.items():
         if re.search(pat, text or "", re.I): found.append(label)
+    # 順序は定義順を保つ
     order = {k: i for i, k in enumerate(patterns.keys())}
     return sorted(set(found), key=lambda x: order.get(x, 10**9))
 
@@ -189,7 +175,7 @@ def main():
     index = []
     for it in items:
         title = norm(it.findtext("title") or "")
-        link  = norm(it.findtext("link")  or "")  # ★ 加工しない（Creators でもそのまま）
+        link  = norm(it.findtext("link")  or "")  # Creators の URL でもそのまま
         pub   = norm(it.findtext("pubDate") or "")
         guid  = norm(it.findtext("guid")    or "")
         summary = pick_summary(it)
@@ -197,38 +183,81 @@ def main():
         _id = guid or link or title
         slug = slugify(_id)
 
-        base = {
+        # 基本分類
+        journal = guess_journal_from_map(title)
+        pathogens = pick_many(title, INFECTION_PATHOGEN)
+        topics = pick_many(title, TOPICS)
+
+        # 代表カテゴリ＆統合カテゴリ
+        infection_type = pathogens[0] if pathogens else "その他"
+        infection_all = []
+        if infection_type and infection_type != "その他":
+            infection_all.append(infection_type)
+        infection_all += pathogens
+        # 重複排除（順序維持）
+        seen = set()
+        infection_all = [x for x in infection_all if not (x in seen or seen.add(x))]
+        if not infection_all:
+            infection_all = ["その他"]
+
+        # --- 誌名の特例（タイトルベースの強制上書き） ---
+        if re.search(r"(感染症発生動向調査週報|IDWR)", title):
+            journal = "IDWR"
+        elif re.search(r"(病原微生物検出情報|IASR)", title):
+            journal = "IASR"
+
+        # --- 流行情報 → サーベイランス & 疫学 付与 ---
+        if re.search(r"流行情報", title):
+            study_design = "サーベイランス"
+            if "疫学" not in topics:
+                topics.append("疫学")
+        else:
+            # 既存ロジック（簡易）
+            t = title
+            if   re.search(r"レビュー|review|primer|overview|update", t, re.I): study_design="レビュー"
+            elif re.search(r"guideline|ガイドライン|recommendation|strategy", t, re.I): study_design="ガイドライン"
+            elif re.search(r"random|無作為|第[1-4]相|phase\s?[1-4]|trial", t, re.I):  study_design="RCT"
+            elif re.search(r"前向き|prospective", t, re.I): study_design="前向きコホート"
+            elif re.search(r"後ろ向き|retrospective", t, re.I): study_design="後ろ向きコホート"
+            elif re.search(r"サーベイランス|surveillance|registry|cohort", t, re.I): study_design="サーベイランス"
+            elif re.search(r"症例|case report|case series", t, re.I): study_design="症例報告"
+            else: study_design="不明"
+
+        # 詳細JSON（各1件）
+        detail = {
             "id": _id,
             "slug": slug,
             "title": title,
-            "url": link,            # ★ RSS の link をそのまま使用
+            "url": link,
             "pubDate": pub,
-            "journal": guess_journal(title),
-            "pathogens": pick_many(title, INFECTION_PATHOGEN),
-            "topics":    pick_many(title, TOPICS),
-            "tags":      pick_many(title, FREE_TAGS),
+            "journal": journal,
+            "infection_type": infection_type,
+            "infection_all": infection_all,   # ← 統合カテゴリ
+            "study_design": study_design,
+            "pathogens": pathogens,
+            "topics": topics,
+            "tags": [],                        # 必要なら既存のFREE_TAGSで生成してもよい
+            "summary": summary
         }
-        base["infection_type"] = base["pathogens"][0] if base["pathogens"] else "その他"
-
-        t = title
-        if   re.search(r"レビュー|review|primer|overview|update", t, re.I): base["study_design"]="レビュー"
-        elif re.search(r"guideline|ガイドライン|recommendation|strategy", t, re.I): base["study_design"]="ガイドライン"
-        elif re.search(r"random|無作為|第[1-4]相|phase\s?[1-4]|trial", t, re.I):  base["study_design"]="RCT"
-        elif re.search(r"前向き|prospective", t, re.I): base["study_design"]="前向きコホート"
-        elif re.search(r"後ろ向き|retrospective", t, re.I): base["study_design"]="後ろ向きコホート"
-        elif re.search(r"サーベイランス|surveillance|registry|cohort", t, re.I): base["study_design"]="サーベイランス"
-        elif re.search(r"症例|case report|case series", t, re.I): base["study_design"]="症例報告"
-        else: base["study_design"]="不明"
-
-        # 詳細JSON（各1件）
-        detail = dict(base)
-        detail["summary"] = summary
         with open(os.path.join(OUT_DIR_EP, f"{slug}.json"), "w", encoding="utf-8") as f:
             json.dump(detail, f, ensure_ascii=False, indent=2)
 
-        # 軽量 index.json 行（要旨短縮）
-        row = dict(base)
-        row["summary_short"] = truncate_multiline(summary, 3, 220)
+        # 軽量 index.json 行
+        row = {
+            "id": _id,
+            "slug": slug,
+            "title": title,
+            "url": link,
+            "pubDate": pub,
+            "journal": journal,
+            "infection_type": infection_type,
+            "infection_all": infection_all,  # ← フィルタに使うため index 側にも出す
+            "study_design": study_design,
+            "pathogens": pathogens,
+            "topics": topics,
+            "tags": [],
+            "summary_short": truncate_multiline(summary, 3, 220)
+        }
         index.append(row)
 
     # 新着順
