@@ -203,3 +203,107 @@ mark {
   width: auto;
 }
 
+/* ====== 見た目アップのトークン（上書き可） ====== */
+:root{
+  --bg: #0f1117;
+  --paper:#141a23;
+  --text:#e8edf3;
+  --muted:#9aa4b2;
+  --line:#243042;
+  --brand:#58a6ff;
+  --accent:#7ee0b5;
+
+  --tag:#1e2836;           --tag-text:#d7e2f0;
+  --glass: rgba(255,255,255,.04);
+  --shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+
+/* ライトモード用（任意） */
+html.theme-light{
+  --bg:#f6f8fb;  --paper:#ffffff; --text:#182230; --muted:#627089; --line:#e6edf3;
+  --tag:#eef2f7; --tag-text:#283548; --glass:rgba(0,0,0,.04);
+  --shadow: 0 8px 24px rgba(0,0,0,.08);
+}
+
+/* ====== ベース ====== */
+body{ background:var(--bg); color:var(--text); }
+.container{ max-width:1120px; margin:0 auto; padding:0 16px; }
+
+/* ====== ヘッダー（グラデ＋ガラス） ====== */
+.site-header{
+  background:
+    radial-gradient(1200px 300px at 10% -20%, rgba(88,166,255,.30), transparent 60%),
+    radial-gradient(1000px 300px at 110% -10%, rgba(126,224,181,.25), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0));
+  border-bottom:1px solid var(--line);
+  backdrop-filter: saturate(140%) blur(6px);
+}
+.brand{ display:flex; align-items:center; gap:14px; padding:18px 0; }
+.brand-logo{
+  height:44px; width:auto; display:block;
+  border-radius:10px; background:var(--glass);
+  box-shadow: var(--shadow);
+}
+.brand-text h1{ margin:0 0 6px; font-size:24px; letter-spacing:.02em }
+.subtitle{ margin:0; color:var(--muted); font-size:13.5px }
+
+/* ====== ツールバー ====== */
+.toolbar{ position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--line); }
+.toolbar-row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 0; }
+.input,.select{
+  background:var(--paper); color:var(--text); border:1px solid var(--line);
+  border-radius:12px; padding:10px 12px; outline:none; transition:.15s border-color ease;
+}
+.input:focus,.select:focus{ border-color:var(--brand) }
+
+.btn{
+  display:inline-flex; align-items:center; gap:6px;
+  background:var(--paper); color:var(--text); border:1px solid var(--line);
+  border-radius:12px; padding:10px 14px; cursor:pointer; transition:.15s border-color, .2s transform;
+}
+.btn:hover{ border-color:var(--brand); transform: translateY(-1px); }
+.btn-ghost{ background:transparent }
+
+/* ====== 折りたたみフィルタ ====== */
+.filters{
+  margin:8px 0 4px; background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:10px;
+  box-shadow: var(--shadow);
+}
+.filters>summary{ cursor:pointer; color:var(--muted); list-style:none }
+.filters>summary::-webkit-details-marker{ display:none }
+.filters-grid{ margin-top:8px; display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
+.field>span{ display:block; font-size:12px; color:var(--muted); margin:0 0 6px 2px }
+
+/* ====== カード（映え） ====== */
+.card-grid{ display:grid; gap:14px; padding:18px 0 28px; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); }
+.card{
+  background: linear-gradient(180deg, var(--paper), rgba(255,255,255,.02));
+  border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow: var(--shadow);
+  transition: transform .15s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.card:hover{ transform: translateY(-3px); border-color: var(--brand); box-shadow: 0 16px 40px rgba(0,0,0,.4); }
+.card h3{ margin:0 0 10px; font-size:17px; line-height:1.5 }
+.card h3 a{ color:var(--text); text-decoration:none }
+.card h3 a:hover{ color:var(--brand); text-decoration:underline }
+
+/* メタ情報（タグ/日付） */
+.meta{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.tag{
+  background:var(--tag); color:var(--tag-text);
+  padding:4px 10px; border-radius:999px; font-size:12px; border:1px solid var(--line);
+}
+.pill{ border-radius:999px; padding:3px 10px; font-size:12px; border:1px solid var(--line) }
+.pill-blue{  background:rgba(88,166,255,.18);  color:#cfe4ff; }
+.pill-green{ background:rgba(126,224,181,.18); color:#cfeee1; }
+.pill-purple{background:rgba(187,154,247,.18); color:#e8dbff; }
+.date{ margin-left:auto; color:var(--muted); font-size:12px }
+
+.summary{ margin-top:8px; color:var(--text); opacity:.9 }
+.summary-preline{ white-space: pre-line; }
+
+/* ====== フッター ====== */
+.site-footer{ border-top:1px solid var(--line); margin-top:20px }
+.site-footer .container{ padding:18px 0; color:var(--muted) }
+
+/* ====== 小さなアニメ ====== */
+a, .btn, .select, .input, .card{ transition: all .18s ease; }
