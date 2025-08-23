@@ -1,8 +1,8 @@
 name: build-and-deploy
 on:
   schedule:
-    - cron: '0 18 * * *'   # JST 03:00（UTC 18:00）
-  workflow_dispatch:       # 手動実行も可
+    - cron: '30 21 * * *'   # 毎日 06:30 JST（UTC 21:30）
+  workflow_dispatch:         # 手動実行も残す
 
 permissions:
   contents: write
