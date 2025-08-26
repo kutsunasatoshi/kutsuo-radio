@@ -67,8 +67,6 @@
         </select>
       </label>
 
-      <!-- 病原体セレクトは削除（統合済みのため） -->
-
       <label class="field">
         <span>トピック</span>
         <select id="f-topic" class="select">
@@ -89,10 +87,24 @@
   <div id="count" class="hit-count" aria-live="polite">0件ヒット</div>
 </section>
 
-<!-- ====== 一覧 ====== -->
-<main class="container">
-  <section id="list" class="card-grid" aria-live="polite"></section>
-</main>
+<!-- ====== 一覧＋ランキング（2カラム） ====== -->
+<section class="container home-grid">
+  <!-- 左：従来の一覧 -->
+  <div class="home-left">
+    <section id="list" class="card-grid" aria-live="polite"></section>
+  </div>
+
+  <!-- 右：人気ランキング（Spotify CSVベース） -->
+  <aside class="home-right">
+    <article class="card">
+      <h3 style="margin-bottom:12px;">人気エピソード（再生数）</h3>
+      <div id="ranking" class="rank-list"></div>
+      <p style="margin-top:8px;color:var(--muted);font-size:12px">
+        データ出典：<code>data/spotify.json</code>（Spotify CSVから自動生成）
+      </p>
+    </article>
+  </aside>
+</section>
 
 <footer class="site-footer">
   <div class="container">
@@ -100,7 +112,8 @@
   </div>
 </footer>
 
-<!-- アプリ本体 -->
+<!-- スクリプト -->
 <script src="app.js"></script>
+<script src="rank.js"></script>
 </body>
 </html>
