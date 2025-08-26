@@ -19,6 +19,7 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
       - run: python scripts/build.py
+      - run: python scripts/spotify_ingest.py
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
